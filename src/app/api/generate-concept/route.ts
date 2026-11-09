@@ -89,18 +89,24 @@ export async function POST(req: NextRequest) {
     const samplePath = path.join(originalsDir, "sample_reference.png");
     if (fs.existsSync(samplePath)) {
       sampleBuffer = await fs.promises.readFile(samplePath);
-    } else if (session.currentResults.style1.localPath && fs.existsSync(session.currentResults.style1.localPath)) {
-      // Inherit Hero render as style lock
-      try {
-        sampleBuffer = await fs.promises.readFile(session.currentResults.style1.localPath);
-        addLog(
-          "info",
-          "DirectorAgent",
-          "Kế thừa Aesthetic Hero",
-          "Sử dụng ảnh Hero (Phong Cách 1) làm chuẩn bối cảnh, ánh sáng và bục 3D để đồng bộ Lookbook."
-        );
-      } catch (err) {
-        console.warn("Could not read style1 as sampleBuffer:", err);
+    } else if (session.currentResults.style1.localPath) {
+      // Inherit Hero render (prefer clean buffer without price badge) as style lock
+      const s1SourcePath =
+        (session.currentResults.style1.cleanLocalPath && fs.existsSync(session.currentResults.style1.cleanLocalPath))
+          ? session.currentResults.style1.cleanLocalPath
+          : session.currentResults.style1.localPath;
+      if (fs.existsSync(s1SourcePath)) {
+        try {
+          sampleBuffer = await fs.promises.readFile(s1SourcePath);
+          addLog(
+            "info",
+            "DirectorAgent",
+            "Kế thừa Aesthetic Hero",
+            "Sử dụng ảnh Hero (Phong Cách 1) làm chuẩn bối cảnh, ánh sáng và bục 3D để đồng bộ Lookbook."
+          );
+        } catch (err) {
+          console.warn("Could not read style1 as sampleBuffer:", err);
+        }
       }
     }
 

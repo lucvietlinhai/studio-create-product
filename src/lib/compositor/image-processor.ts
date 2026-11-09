@@ -415,7 +415,7 @@ export async function create2x2GridImage(params: {
 
 /**
  * Generates the modern minimalist commercial Infographic Line Callout SVG
- * matching the Pipeline Specification (Style 3: Infographic Line Callout).
+ * (Style 3: Sleek Architectural Leader Lines, Floating High-Contrast Typography, Zero Bulky Background Boxes).
  */
 export function generateCalloutSvg(params: {
   width: number;
@@ -425,9 +425,9 @@ export function generateCalloutSvg(params: {
 }): string {
   const { width: w, height: h, productDetails } = params;
 
-  const title = productDetails.title || "Sản phẩm chính hãng";
-  const category = productDetails.category || "Commercial Edition";
-  const features =
+  const title = (productDetails.title || "Sản phẩm chính hãng").trim();
+  const category = (productDetails.category || "Commercial Studio Edition").trim();
+  const rawFeatures =
     productDetails.highlightFeatures && productDetails.highlightFeatures.filter((f) => f.trim()).length > 0
       ? productDetails.highlightFeatures.filter((f) => f.trim())
       : [
@@ -440,158 +440,267 @@ export function generateCalloutSvg(params: {
   const policyText =
     productDetails.policyText && productDetails.policyText.trim().length > 0
       ? productDetails.policyText.trim()
-      : "Cam kết sản phẩm chính hãng 100% • Bảo hành chuẩn hãng";
+      : "Cam kết chính hãng 100% • Bảo hành tiêu chuẩn";
 
-  // Build spec items with numbering and clean spacing
-  const blockX = Math.round(w * 0.58);
-  const blockY = Math.round(h * 0.22);
-  const blockW = Math.round(w * 0.38);
+  // 4 symmetric floating callout slots (Left-Top, Right-Top, Left-Bottom, Right-Bottom)
+  // Keeping the center product zone (x: 33%..67%) 100% unobstructed.
+  const slots = [
+    {
+      num: "01",
+      isLeft: true,
+      anchorX: Math.round(w * 0.41),
+      anchorY: Math.round(h * 0.37),
+      elbowX: Math.round(w * 0.34),
+      elbowY: Math.round(h * 0.28),
+      outerX: Math.round(w * 0.048),
+    },
+    {
+      num: "02",
+      isLeft: false,
+      anchorX: Math.round(w * 0.59),
+      anchorY: Math.round(h * 0.37),
+      elbowX: Math.round(w * 0.66),
+      elbowY: Math.round(h * 0.28),
+      outerX: Math.round(w * 0.952),
+    },
+    {
+      num: "03",
+      isLeft: true,
+      anchorX: Math.round(w * 0.40),
+      anchorY: Math.round(h * 0.60),
+      elbowX: Math.round(w * 0.34),
+      elbowY: Math.round(h * 0.67),
+      outerX: Math.round(w * 0.048),
+    },
+    {
+      num: "04",
+      isLeft: false,
+      anchorX: Math.round(w * 0.60),
+      anchorY: Math.round(h * 0.60),
+      elbowX: Math.round(w * 0.66),
+      elbowY: Math.round(h * 0.67),
+      outerX: Math.round(w * 0.952),
+    },
+  ];
 
-  let specItemsSvg = "";
-  let currentY = blockY + Math.round(h * 0.045);
+  const primaryFontSize = Math.max(14, Math.round(w * 0.0172));
+  const secondaryFontSize = Math.max(13, Math.round(w * 0.0155));
+  const maxCharsPerLine = w < 700 ? 18 : 23;
 
-  features.slice(0, 4).forEach((feat, idx) => {
-    const wrapped = wrapText(feat, 28);
-    const itemNum = `0${idx + 1}`;
+  let calloutsSvg = "";
 
-    specItemsSvg += `
-      <!-- Feature Item ${idx + 1} -->
-      <g transform="translate(${blockX + 12}, ${currentY})">
-        <circle cx="6" cy="-4" r="3" fill="#6366f1" filter="url(#glowDot)" />
-        <text x="16" y="0" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif" 
-              font-weight="700" font-size="${Math.round(w * 0.015)}" fill="#818cf8" letter-spacing="0.5">
-          ${itemNum}
-        </text>
-        <text x="38" y="0" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif" 
-              font-weight="600" font-size="${Math.round(w * 0.0165)}" fill="#ffffff" filter="url(#textShadow)">
-          ${escapeXml(wrapped[0] || feat)}
-        </text>
-        ${wrapped[1] ? `
-          <text x="38" y="${Math.round(h * 0.022)}" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif" 
-                font-weight="500" font-size="${Math.round(w * 0.015)}" fill="#cbd5e1" filter="url(#textShadow)">
-            ${escapeXml(wrapped[1])}
-          </text>
-        ` : ""}
+  rawFeatures.slice(0, 4).forEach((feat, idx) => {
+    const slot = slots[idx];
+    if (!slot) return;
+
+    const lines = wrapText(feat, maxCharsPerLine);
+    const line1 = lines[0] || feat;
+    const line2 = lines.slice(1).join(" ");
+    const textAnchor = slot.isLeft ? "start" : "end";
+    const accentEndX = slot.isLeft ? slot.outerX + Math.round(w * 0.028) : slot.outerX - Math.round(w * 0.028);
+    const lineGradId = slot.isLeft ? "lineGradLeft" : "lineGradRight";
+
+    calloutsSvg += `
+      <!-- Sleek Floating Callout ${slot.num} -->
+      <g>
+        <!-- Subtle contrast under-stroke for visibility on bright backgrounds -->
+        <path
+          d="M ${slot.anchorX} ${slot.anchorY} L ${slot.elbowX} ${slot.elbowY} L ${slot.outerX} ${slot.elbowY}"
+          fill="none"
+          stroke="#090d16"
+          stroke-opacity="0.5"
+          stroke-width="3"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        />
+        <!-- Crisp architectural leader line -->
+        <path
+          d="M ${slot.anchorX} ${slot.anchorY} L ${slot.elbowX} ${slot.elbowY} L ${slot.outerX} ${slot.elbowY}"
+          fill="none"
+          stroke="url(#${lineGradId})"
+          stroke-width="1.4"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          filter="url(#lineGlow)"
+        />
+        <!-- Accent highlight bar on outer edge of shelf line -->
+        <line
+          x1="${slot.outerX}"
+          y1="${slot.elbowY}"
+          x2="${accentEndX}"
+          y2="${slot.elbowY}"
+          stroke="#38bdf8"
+          stroke-width="2.6"
+          stroke-linecap="round"
+        />
+
+        <!-- Elbow joint micro-node -->
+        <circle cx="${slot.elbowX}" cy="${slot.elbowY}" r="2.2" fill="#e0f2fe" />
+
+        <!-- Precision Target Node on Product -->
+        <circle cx="${slot.anchorX}" cy="${slot.anchorY}" r="8.5" fill="none" stroke="#ffffff" stroke-opacity="0.45" stroke-width="1" />
+        <circle cx="${slot.anchorX}" cy="${slot.anchorY}" r="5" fill="#090d16" fill-opacity="0.45" stroke="#38bdf8" stroke-width="1.4" />
+        <circle cx="${slot.anchorX}" cy="${slot.anchorY}" r="2.4" fill="#ffffff" filter="url(#glowDot)" />
+
+        <!-- Floating Typography Above Shelf Line (No background box!) -->
+        <text
+          x="${slot.outerX}"
+          y="${slot.elbowY - Math.round(h * 0.012)}"
+          text-anchor="${textAnchor}"
+          font-family="'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif"
+          font-weight="800"
+          font-size="${primaryFontSize}"
+          fill="#ffffff"
+          stroke="#090d16"
+          stroke-opacity="0.88"
+          stroke-width="3.8"
+          stroke-linejoin="round"
+          paint-order="stroke fill"
+          filter="url(#calloutShadow)"
+        >${
+          slot.isLeft
+            ? `<tspan fill="#38bdf8" font-weight="900">${slot.num}</tspan>  ${escapeXml(line1)}`
+            : `${escapeXml(line1)}  <tspan fill="#38bdf8" font-weight="900">${slot.num}</tspan>`
+        }</text>
+
+        <!-- Secondary Line Below Shelf Line (if wrapped) -->
+        ${
+          line2
+            ? `<text
+                x="${slot.outerX}"
+                y="${slot.elbowY + Math.round(h * 0.025)}"
+                text-anchor="${textAnchor}"
+                font-family="'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif"
+                font-weight="700"
+                font-size="${secondaryFontSize}"
+                fill="#f1f5f9"
+                stroke="#090d16"
+                stroke-opacity="0.88"
+                stroke-width="3.5"
+                stroke-linejoin="round"
+                paint-order="stroke fill"
+                filter="url(#calloutShadow)"
+              >${escapeXml(line2)}</text>`
+            : ""
+        }
       </g>
     `;
-    currentY += wrapped.length > 1 ? Math.round(h * 0.062) : Math.round(h * 0.048);
   });
 
-  const totalBlockHeight = currentY - blockY + Math.round(h * 0.02);
-
-  // L-shaped Callout Line 1: From Product silhouette -> Spec Block
-  const anchor1X = Math.round(w * 0.50);
-  const anchor1Y = Math.round(h * 0.42);
-  const elbow1X = Math.round(w * 0.54);
-  const elbow1Y = blockY + Math.round(h * 0.06);
-  const end1X = blockX - 10;
-
-  // L-shaped Callout Line 2: From Product Base -> Policy Block
-  const anchor2X = Math.round(w * 0.44);
-  const anchor2Y = Math.round(h * 0.74);
-  const elbow2Y = Math.round(h * 0.85);
-  const end2X = Math.round(w * 0.52);
-
-  const policyLines = wrapText(policyText, 36);
-  let policyTspans = "";
-  policyLines.slice(0, 2).forEach((line, idx) => {
-    policyTspans += `<tspan x="${end2X + 16}" dy="${idx === 0 ? 0 : Math.round(h * 0.024)}">${escapeXml(line)}</tspan>`;
-  });
+  const titleFontSize =
+    title.length > 28
+      ? Math.round(w * 0.027)
+      : title.length > 20
+      ? Math.round(w * 0.032)
+      : Math.round(w * 0.037);
 
   const priceBadgeSvg = buildPriceBadgeSvg(w, productDetails, h);
 
   return `
     <svg width="${w}" height="${h}" xmlns="http://www.w3.org/2000/svg">
       <defs>
-        <filter id="textShadow" x="-20%" y="-20%" width="140%" height="140%">
-          <feDropShadow dx="0" dy="2" stdDeviation="4" flood-color="#000000" flood-opacity="0.8" />
+        <filter id="calloutShadow" x="-20%" y="-20%" width="140%" height="140%">
+          <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#000000" flood-opacity="0.75" />
+        </filter>
+        <filter id="lineGlow" x="-20%" y="-20%" width="140%" height="140%">
+          <feDropShadow dx="0" dy="1" stdDeviation="2" flood-color="#000000" flood-opacity="0.65" />
         </filter>
         <filter id="glowDot" x="-50%" y="-50%" width="200%" height="200%">
-          <feDropShadow dx="0" dy="0" stdDeviation="4" flood-color="#818cf8" flood-opacity="0.95" />
+          <feDropShadow dx="0" dy="0" stdDeviation="3.5" flood-color="#38bdf8" flood-opacity="0.95" />
         </filter>
-        <linearGradient id="specHeaderGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-          <stop offset="0%" stop-color="#6366f1" stop-opacity="0.8"/>
-          <stop offset="100%" stop-color="#a855f7" stop-opacity="0.4"/>
+        <linearGradient id="lineGradLeft" x1="100%" y1="0%" x2="0%" y2="0%">
+          <stop offset="0%" stop-color="#ffffff" stop-opacity="0.95" />
+          <stop offset="70%" stop-color="#e0f2fe" stop-opacity="0.88" />
+          <stop offset="100%" stop-color="#38bdf8" stop-opacity="0.95" />
+        </linearGradient>
+        <linearGradient id="lineGradRight" x1="0%" y1="0%" x2="100%" y2="0%">
+          <stop offset="0%" stop-color="#ffffff" stop-opacity="0.95" />
+          <stop offset="70%" stop-color="#e0f2fe" stop-opacity="0.88" />
+          <stop offset="100%" stop-color="#38bdf8" stop-opacity="0.95" />
+        </linearGradient>
+        <linearGradient id="headerAccentGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+          <stop offset="0%" stop-color="#38bdf8" stop-opacity="0" />
+          <stop offset="50%" stop-color="#38bdf8" stop-opacity="0.9" />
+          <stop offset="100%" stop-color="#38bdf8" stop-opacity="0" />
         </linearGradient>
       </defs>
 
-      <!-- Top Product Title & Category Pill -->
-      <g transform="translate(${Math.round(w * 0.06)}, ${Math.round(h * 0.08)})">
-        <!-- Category Badge -->
-        <rect x="0" y="0" width="${Math.min(300, category.length * 10 + 24)}" height="${Math.round(h * 0.028)}" rx="6" 
-              fill="#090d16" fill-opacity="0.75" stroke="#6366f1" stroke-opacity="0.6" stroke-width="1" />
-        <text x="10" y="${Math.round(h * 0.019)}" 
-              font-family="system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif" 
-              font-weight="700" font-size="${Math.round(w * 0.013)}" fill="#a5b4fc" letter-spacing="0.6">
-          ${escapeXml(category.toUpperCase())}
-        </text>
+      <!-- Minimalist Editorial Top Header (Centered, No Bulky Box) -->
+      <g>
+        <text
+          x="${Math.round(w / 2)}"
+          y="${Math.round(h * 0.058)}"
+          text-anchor="middle"
+          font-family="'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif"
+          font-weight="800"
+          font-size="${Math.max(11, Math.round(w * 0.013))}"
+          fill="#7dd3fc"
+          letter-spacing="2.4"
+          stroke="#090d16"
+          stroke-opacity="0.88"
+          stroke-width="3.2"
+          stroke-linejoin="round"
+          paint-order="stroke fill"
+          filter="url(#calloutShadow)"
+        >${escapeXml(category.toUpperCase())}</text>
 
-        <!-- Main Title -->
-        <text x="0" y="${Math.round(h * 0.068)}" 
-              font-family="system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif" 
-              font-weight="800" font-size="${Math.round(w * 0.040)}" fill="#ffffff" 
-              filter="url(#textShadow)" letter-spacing="0.3">
-          ${escapeXml(title)}
-        </text>
+        <text
+          x="${Math.round(w / 2)}"
+          y="${Math.round(h * 0.102)}"
+          text-anchor="middle"
+          font-family="'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif"
+          font-weight="900"
+          font-size="${titleFontSize}"
+          fill="#ffffff"
+          letter-spacing="0.4"
+          stroke="#090d16"
+          stroke-opacity="0.88"
+          stroke-width="4.5"
+          stroke-linejoin="round"
+          paint-order="stroke fill"
+          filter="url(#calloutShadow)"
+        >${escapeXml(title)}</text>
+
+        <line
+          x1="${Math.round(w * 0.36)}"
+          y1="${Math.round(h * 0.12)}"
+          x2="${Math.round(w * 0.64)}"
+          y2="${Math.round(h * 0.12)}"
+          stroke="url(#headerAccentGrad)"
+          stroke-width="2"
+          stroke-linecap="round"
+        />
       </g>
 
-      <!-- Callout Line 1 (Product -> Spec Block) -->
-      <path d="M ${anchor1X} ${anchor1Y} L ${elbow1X} ${elbow1Y} L ${end1X} ${elbow1Y}" 
-            stroke="#818cf8" stroke-width="2" stroke-opacity="0.9" fill="none" filter="url(#textShadow)" />
-      <circle cx="${anchor1X}" cy="${anchor1Y}" r="5" fill="#ffffff" stroke="#6366f1" stroke-width="2" filter="url(#glowDot)" />
-      <circle cx="${end1X}" cy="${elbow1Y}" r="4" fill="#a5b4fc" filter="url(#glowDot)" />
+      <!-- 4 Sleek Distributed Callout Lines & Floating Text -->
+      ${calloutsSvg}
 
-      <!-- Frosted Backdrop & Spec Block -->
-      <rect x="${blockX}" y="${blockY}" width="${blockW}" height="${totalBlockHeight}" rx="14" 
-            fill="#090d16" fill-opacity="0.78" stroke="#ffffff" stroke-opacity="0.18" stroke-width="1.2" />
-      
-      <!-- Spec Block Header -->
-      <rect x="${blockX}" y="${blockY}" width="${blockW}" height="${Math.round(h * 0.034)}" rx="14" 
-            fill="url(#specHeaderGrad)" />
-      <text x="${blockX + 16}" y="${blockY + Math.round(h * 0.022)}" 
-            font-family="system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif" 
-            font-weight="800" font-size="${Math.round(w * 0.014)}" fill="#ffffff" letter-spacing="0.6">
-        ✦ THÔNG SỐ &amp; TÍNH NĂNG CỐT LÕI
-      </text>
-
-      <!-- Spec Items -->
-      ${specItemsSvg}
-
-      <!-- Callout Line 2 (Product Base -> Policy Block) -->
-      <path d="M ${anchor2X} ${anchor2Y} L ${anchor2X} ${elbow2Y} L ${end2X} ${elbow2Y}" 
-            stroke="#10b981" stroke-width="2" stroke-opacity="0.9" fill="none" filter="url(#textShadow)" />
-      <circle cx="${anchor2X}" cy="${anchor2Y}" r="5" fill="#ffffff" stroke="#10b981" stroke-width="2" filter="url(#glowDot)" />
-      <circle cx="${end2X}" cy="${elbow2Y}" r="4" fill="#6ee7b7" filter="url(#glowDot)" />
-
-      <!-- Policy Block -->
-      <rect x="${end2X + 8}" y="${elbow2Y - Math.round(h * 0.024)}" width="${Math.round(w * 0.42)}" height="${Math.round(h * 0.055)}" rx="10" 
-            fill="#090d16" fill-opacity="0.75" stroke="#10b981" stroke-opacity="0.4" stroke-width="1" />
-      <text x="${end2X + 16}" y="${elbow2Y - Math.round(h * 0.005)}" 
-            font-family="system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif" 
-            font-weight="700" font-size="${Math.round(w * 0.015)}" fill="#34d399" 
-            filter="url(#textShadow)">
-        ✓ CHÍNH HÃNG &amp; CAM KẾT
-      </text>
-      <text x="${end2X + 16}" y="${elbow2Y + Math.round(h * 0.017)}" 
-            font-family="system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif" 
-            font-weight="500" font-size="${Math.round(w * 0.0145)}" fill="#e2e8f0" 
-            filter="url(#textShadow)">
-        ${policyTspans}
-      </text>
-
-      <!-- Bottom-Left Commercial Summary -->
-      <text x="${Math.round(w * 0.06)}" y="${Math.round(h * 0.92)}" 
-            font-family="system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif" 
-            font-weight="700" font-size="${Math.round(w * 0.017)}" fill="#ffffff" 
-            filter="url(#textShadow)">
-        ${escapeXml((productDetails.packagingHighlights || "COMMERCIAL STUDIO EDITION").toUpperCase())}
-      </text>
-      <text x="${Math.round(w * 0.06)}" y="${Math.round(h * 0.95)}" 
-            font-family="system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif" 
-            font-weight="500" font-size="${Math.round(w * 0.0145)}" fill="#94a3b8" 
-            filter="url(#textShadow)">
-        ${escapeXml(title)} • Official Lookbook
-      </text>
+      <!-- Minimalist Single-Line Bottom Footer (No Bulky Box) -->
+      <g>
+        <line
+          x1="${Math.round(w * 0.22)}"
+          y1="${Math.round(h * 0.918)}"
+          x2="${Math.round(w * 0.78)}"
+          y2="${Math.round(h * 0.918)}"
+          stroke="url(#headerAccentGrad)"
+          stroke-width="1.2"
+        />
+        <text
+          x="${Math.round(w / 2)}"
+          y="${Math.round(h * 0.95)}"
+          text-anchor="middle"
+          font-family="'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif"
+          font-weight="700"
+          font-size="${Math.max(12, Math.round(w * 0.015))}"
+          fill="#f8fafc"
+          stroke="#090d16"
+          stroke-opacity="0.88"
+          stroke-width="3.6"
+          stroke-linejoin="round"
+          paint-order="stroke fill"
+          filter="url(#calloutShadow)"
+        ><tspan fill="#34d399" font-weight="900">✓</tspan>  ${escapeXml(policyText)}</text>
+      </g>
 
       ${priceBadgeSvg}
     </svg>

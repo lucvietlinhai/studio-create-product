@@ -467,11 +467,20 @@ USER'S EXPLICIT EDIT DIRECTIVE (CRITICAL - APPLY VISUALLY AND BOLDLY):
 ${options.prompt}`;
     }
   } else if (conceptRef && refImageUrls.length >= 2) {
-    promptToSend = `[IMAGE MAPPING DIRECTIVE]:
+    if (options.style === "style3_callout") {
+      promptToSend = `[IMAGE MAPPING DIRECTIVE - UNBOXED STANDALONE PRODUCT INFOGRAPHIC BASE]:
+- Reference Image 1: Extract ONLY the authentic UNBOXED standalone physical product itself (completely omit and remove any outer cardboard packaging box or carton).
+- Reference Image 2: Match ONLY the studio background environment, podium surface material, lighting direction, and color mood from Reference Image 2 (do NOT include the packaging box from Reference Image 2).
+- Composition: Place ONLY the single unboxed physical product centered on the podium (occupying ~38-42% of the frame), leaving wide, clean open studio space around the left, right, and top margins for technical callout lines.
+
+${options.prompt}`;
+    } else {
+      promptToSend = `[IMAGE MAPPING DIRECTIVE]:
 - Reference Image 1: Authentic physical commercial product and retail packaging.
 - Reference Image 2: TARGET PHOTOSET & ARTISTIC DESIGN BLUEPRINT. You MUST analyze and faithfully recreate its exact studio set, background, podium surface, lighting direction, props, and color mood.
 
 ${options.prompt}`;
+    }
   }
 
   const requestBody: Record<string, any> = {

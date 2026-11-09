@@ -374,7 +374,11 @@ EXECUTION MANDATES:
 
   // 2. Packaging Composition Directive (Mandatory Rule 2)
   let rule2Packaging = "";
-  if (conceptDNA.packagingOption === "auto_detect" || !conceptDNA.packagingOption) {
+  if (style === "style3_callout") {
+    // Style 3 (Infographic Callout) strictly focuses on the UNBOXED standalone product without packaging box
+    rule2Packaging =
+      "UNBOXED STANDALONE PRODUCT FOCUS (NO PACKAGING BOX): Completely unbox and separate the physical product from its outer cardboard box, carton, or retail packaging. Do NOT include any packaging box in the scene. Showcase ONLY the authentic standalone physical product itself positioned cleanly in the center of the studio podium, leaving generous open negative space around it for technical callout lines.";
+  } else if (conceptDNA.packagingOption === "auto_detect" || !conceptDNA.packagingOption) {
     const hasBoxSignal =
       Boolean(
         conceptDNA.productVisionSummary &&
@@ -449,14 +453,14 @@ INTEGRATION: Seamlessly place the authentic physical product from Image 0 inside
   } else if (style === "style2_grid2x2") {
     rule7ShotSpecific = `SHOT TYPE (2x2 MULTI-ANGLE GRID COLLAGE): High-end 2x2 grid collage showcasing 4 different studio angles in four neat quadrant panels separated by thin clean white divider lines on the identical studio background (${conceptDNA.paletteSpec}): Top-Left panel: direct front studio view on ${conceptDNA.surfaceSpec}; Top-Right panel: extreme macro close-up of authentic specification label, typography, and material texture; Bottom-Left panel: 45-degree angled three-quarter studio view on ${conceptDNA.surfaceSpec}; Bottom-Right panel: dynamic flatlay of product and packaging arranged cleanly on ${conceptDNA.surfaceSpec}.`;
   } else {
-    // style3_callout
+    // style3_callout: Unboxed standalone product centered with generous negative space
     if (useHybridOverlay) {
-      rule7ShotSpecific = `SHOT TYPE (INFOGRAPHIC STUDIO BASE): Modern minimalist commercial infographic studio shoot on ${conceptDNA.surfaceSpec} with lighting (${conceptDNA.lightingSpec}). Position the authentic product and its packaging side-by-side in the left-center of the frame, leaving a clean, uncluttered buffer zone at the top and right side (35% open studio background space) ready for technical indicator lines and specification typography. Do NOT render random floating text or gibberish letters in the background.`;
+      rule7ShotSpecific = `SHOT TYPE (UNBOXED STANDALONE PRODUCT INFOGRAPHIC BASE): High-end minimalist commercial studio shoot on ${conceptDNA.surfaceSpec} with lighting (${conceptDNA.lightingSpec}). Showcase ONLY the unboxed standalone physical product (completely separated from and without any retail cardboard packaging box) centered on the studio podium, occupying ~38-42% of the center frame. Leave wide, clean, uncluttered studio background space on both the left side, right side, and top (60% open negative space) ready for sleek external technical indicator lines. CRITICAL: Do NOT render any text, letters, numbers, callout boxes, or graphic lines inside the AI generation itself—keep the background 100% pure studio photography.`;
     } else {
       const featuresList = (productDetails.highlightFeatures || [])
         .filter((f) => f.trim().length > 0)
         .join(" | ");
-      rule7ShotSpecific = `SHOT TYPE (INFOGRAPHIC LINE CALLOUT POSTER): Modern minimalist commercial infographic breakdown poster on ${conceptDNA.surfaceSpec}. Clean white graphic indicator lines, glowing technical callout dots, and sleek typography pointers point directly to authentic features (${featuresList}) of the product and packaging.`;
+      rule7ShotSpecific = `SHOT TYPE (UNBOXED PRODUCT INFOGRAPHIC LINE CALLOUT): Modern minimalist commercial infographic breakdown poster on ${conceptDNA.surfaceSpec}. Showcase ONLY the unboxed standalone physical product centered on the podium without any packaging box. Ultra-thin, sleek graphic indicator lines, glowing technical callout dots, and crisp floating typography (with NO bulky dark background boxes) point directly to authentic features (${featuresList}) of the product.`;
     }
   }
 
