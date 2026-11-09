@@ -11,7 +11,7 @@ import {
 import { buildConceptDNA, compileStylePrompt } from "@/lib/agents/director-agent";
 import { extractVisionSummaries } from "@/lib/agents/analyzer-agent";
 import { orchestrateImageGeneration } from "@/lib/agents/image-orchestrator";
-import { GeneratedImageRecord, ProcessLogEntry } from "@/types/studio";
+import { GeneratedImageRecord, ImageResolution, ProcessLogEntry } from "@/types/studio";
 
 export async function POST(req: NextRequest) {
   const logs: ProcessLogEntry[] = [];
@@ -35,7 +35,7 @@ export async function POST(req: NextRequest) {
   };
 
   try {
-    const { sessionId, dateFolder } = await req.json();
+    const { sessionId, dateFolder, resolution: reqResolution } = await req.json();
 
     if (!sessionId || !dateFolder) {
       return NextResponse.json(
@@ -145,13 +145,15 @@ export async function POST(req: NextRequest) {
     });
 
     const createdAt = new Date().toISOString();
+    const targetResolution: ImageResolution = reqResolution || session.resolution || "1K";
+    session.resolution = targetResolution;
 
     // 1. Render Style 2: MULTI-ANGLE 2x2
     const s2Ver = getNextVersionNumber(session, "style2_grid2x2");
     addLog(
       "info",
       "Orchestrator",
-      `Render Kiểu 2: MULTI-ANGLE 2x2 (v${s2Ver})`,
+      `Render Kiểu 2: MULTI-ANGLE 2x2 (v${s2Ver} • ${targetResolution})`,
       "Sinh bố cục 2x2 Grid đồng nhất tone màu Lookbook: Chính diện, Macro tem mác, Góc 45°, Chi tiết cạnh & cáp..."
     );
     const style2Prompts = compileStylePrompt({
@@ -166,6 +168,7 @@ export async function POST(req: NextRequest) {
       prompt: style2Prompts.prompt,
       negativePrompt: style2Prompts.negativePrompt,
       aspectRatio: session.aspectRatio,
+      resolution: targetResolution,
       provider: session.provider,
       originalPhotos: photoBuffers,
       backgroundRef: bgBuffer,
@@ -191,6 +194,7 @@ export async function POST(req: NextRequest) {
       localPath: s2Path,
       cleanLocalPath: s2CleanPath,
       aspectRatio: session.aspectRatio,
+      resolution: targetResolution,
       promptUsed: style2Prompts.prompt,
       provider: session.provider,
       createdAt,
@@ -199,7 +203,7 @@ export async function POST(req: NextRequest) {
       "success",
       "Compositor",
       "Hoàn tất Kiểu 2 (Multi-Angle 2x2)",
-      `Đã lưu ${s2FileName} (${(s2Res.buffer.length / 1024).toFixed(1)} KB)`
+      `Đã lưu ${s2FileName} [Chuẩn ${targetResolution}] (${(s2Res.buffer.length / 1024).toFixed(1)} KB)`
     );
 
     // 2. Render Style 3: INFOGRAPHIC LINE
@@ -207,8 +211,8 @@ export async function POST(req: NextRequest) {
     addLog(
       "info",
       "Orchestrator",
-      `Render Kiểu 3: INFOGRAPHIC LINE (v${s3Ver})`,
-      "Sinh nền Studio tối giản đồng bộ và kết xuất đường chỉ dẫn công năng..."
+      `Render Kiểu 3: INFOGRAPHIC LINE (v${s3Ver} • ${targetResolution})`,
+      "Sinh nền Studio sản phẩm bóc tách bao bì và kết xuất đường chỉ dẫn công năng..."
     );
     const style3Prompts = compileStylePrompt({
       style: "style3_callout",
@@ -222,6 +226,7 @@ export async function POST(req: NextRequest) {
       prompt: style3Prompts.prompt,
       negativePrompt: style3Prompts.negativePrompt,
       aspectRatio: session.aspectRatio,
+      resolution: targetResolution,
       provider: session.provider,
       originalPhotos: photoBuffers,
       backgroundRef: bgBuffer,
@@ -247,6 +252,7 @@ export async function POST(req: NextRequest) {
       localPath: s3Path,
       cleanLocalPath: s3CleanPath,
       aspectRatio: session.aspectRatio,
+      resolution: targetResolution,
       promptUsed: style3Prompts.prompt,
       provider: session.provider,
       createdAt,

@@ -34,3 +34,4 @@ chmod +x run-mac.command
 ## Cấu Hình API Key
 - Sau khi giao diện mở lên tại `http://localhost:3000`, bấm nút **Cài đặt API Key** ở góc phải trên cùng để nhập API Key (`Sangtao.ai`, `Google Gemini`, hoặc `OpenAI`).
 - API Key được lưu cục bộ trên máy cá nhân (`studio-settings.json` / `.env.local`) và đã được loại trừ hoàn toàn trong `.gitignore` để bảo mật tuyệt đối.
+

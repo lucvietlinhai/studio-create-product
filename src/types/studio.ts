@@ -1,5 +1,7 @@
 export type AspectRatio = "1:1" | "4:3" | "16:9" | "9:16" | "3:4" | "4:5";
 
+export type ImageResolution = "1K" | "2K" | "4K";
+
 export type ConceptMode = "preset" | "background_ref" | "prompt" | "sample_match";
 
 export type AIProvider = "sangtao" | "gemini" | "openai";
@@ -42,18 +44,13 @@ export interface SampleStyleAnalysis {
   overallStyleSummary: string;
 }
 
-export type PriceBadgePosition =
-  | "top-left"
-  | "top-center"
-  | "top-right"
-  | "center-left"
-  | "center"
-  | "center-right"
-  | "bottom-left"
-  | "bottom-center"
-  | "bottom-right";
-
-export type PriceBadgeTheme = "flash_sale" | "luxury_gold" | "tiktok_neon" | "emerald_eco";
+export interface EditRegionBox {
+  xPercent: number; // Left (0-100)
+  yPercent: number; // Top (0-100)
+  widthPercent: number; // Width (0-100)
+  heightPercent: number; // Height (0-100)
+  zoneLabel: string; // Human-readable location description
+}
 
 export interface ProductDetails {
   title: string;
@@ -62,11 +59,6 @@ export interface ProductDetails {
   packagingHighlights?: string; // Điểm nhấn bao bì / vỏ hộp
   policyText?: string; // Chính sách cam kết / bảo hành
   highlightFeatures: string[]; // For Callout lines (Style 3)
-  originalPrice?: string;
-  salePrice?: string;
-  showPriceBadge: boolean;
-  priceBadgePosition?: PriceBadgePosition;
-  priceBadgeTheme?: PriceBadgeTheme;
 }
 
 export interface CalloutPoint {
@@ -104,12 +96,13 @@ export interface GeneratedImageRecord {
   localPath: string;
   cleanLocalPath?: string; // Path to clean AI render before SVG vector overlays (prevents double-text ghosting on edit)
   aspectRatio: AspectRatio;
+  resolution?: ImageResolution;
   promptUsed: string;
   editPromptUsed?: string;
+  editRegionUsed?: EditRegionBox;
   provider: AIProvider;
   createdAt: string;
   calloutPoints?: CalloutPoint[];
-  hasOverlayBadge?: boolean;
 }
 
 export interface ProductSession {
@@ -124,6 +117,7 @@ export interface ProductSession {
   colorTone?: ColorTone;
   lockSameBackground?: boolean;
   aspectRatio: AspectRatio;
+  resolution?: ImageResolution;
   provider: AIProvider;
   useHybridOverlay: boolean; // True: Smart SVG/Canvas for text/callout, False: Pure AI
   uploadedImages: {
@@ -154,4 +148,3 @@ export interface StudioSettings {
   enableMockMode: boolean; // Allows previewing full UI & flows without immediate API keys
   outputDirectory: string;
 }
-

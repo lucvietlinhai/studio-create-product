@@ -11,7 +11,7 @@ import {
 import { buildConceptDNA, compileStylePrompt } from "@/lib/agents/director-agent";
 import { extractVisionSummaries } from "@/lib/agents/analyzer-agent";
 import { orchestrateImageGeneration } from "@/lib/agents/image-orchestrator";
-import { GeneratedImageRecord, ShotStyle, ProcessLogEntry } from "@/types/studio";
+import { GeneratedImageRecord, ShotStyle, ImageResolution, EditRegionBox, ProcessLogEntry } from "@/types/studio";
 
 export async function POST(req: NextRequest) {
   const logs: ProcessLogEntry[] = [];
@@ -41,16 +41,38 @@ export async function POST(req: NextRequest) {
       targetStyle, // "style1_hero" | "style2_grid2x2" | "style3_callout" | "all"
       customPromptModifier,
       editPrompt,
+      editRegion,
+      annotatedGuideDataUrl,
+      resolution: reqResolution,
+    }: {
+      dateFolder: string;
+      sessionId: string;
+      targetStyle: ShotStyle | "all";
+      customPromptModifier?: string;
+      editPrompt?: string;
+      editRegion?: EditRegionBox;
+      annotatedGuideDataUrl?: string;
+      resolution?: ImageResolution;
     } = await req.json();
 
     const cleanEditPrompt = (editPrompt || customPromptModifier || "").trim();
+    let annotatedGuideBuffer: Buffer | undefined;
+    if (annotatedGuideDataUrl && typeof annotatedGuideDataUrl === "string") {
+      const b64 = annotatedGuideDataUrl.replace(/^data:image\/\w+;base64,/, "");
+      if (b64.length > 50) {
+        annotatedGuideBuffer = Buffer.from(b64, "base64");
+      }
+    }
 
     if (cleanEditPrompt) {
+      const regionDesc = editRegion
+        ? ` [Vùng khoanh: ${editRegion.zoneLabel} (${Math.round(editRegion.xPercent)}%..${Math.min(100, Math.round(editRegion.xPercent + editRegion.widthPercent))}%, ${Math.round(editRegion.yPercent)}%..${Math.min(100, Math.round(editRegion.yPercent + editRegion.heightPercent))}%)]`
+        : " [Phạm vi: Toàn ảnh]";
       addLog(
         "info",
         "DirectorAgent",
-        "Kích hoạt AI Image Editor (Sửa ảnh bằng Prompt)",
-        `Áp dụng yêu cầu sửa: "${cleanEditPrompt}" cho ${targetStyle}`
+        "Kích hoạt AI Image Editor (Sửa ảnh bằng Prompt & Vùng chọn)",
+        `Áp dụng yêu cầu sửa: "${cleanEditPrompt}" cho ${targetStyle}${regionDesc}`
       );
     } else {
       addLog(
@@ -170,6 +192,9 @@ export async function POST(req: NextRequest) {
         /bỏ chữ|xóa chữ|ẩn chữ|nền sạch|không có text|no text|bỏ thông số/i.test(cleanEditPrompt);
       const effectiveUseOverlay = shouldSkipOverlay ? false : session.useHybridOverlay;
 
+      const targetResolution: ImageResolution = reqResolution || currentRec?.resolution || session.resolution || "1K";
+      session.resolution = targetResolution;
+
       const compiled = compileStylePrompt({
         style,
         conceptDNA,
@@ -177,6 +202,7 @@ export async function POST(req: NextRequest) {
         aspectRatio: session.aspectRatio,
         useHybridOverlay: effectiveUseOverlay,
         editPrompt: cleanEditPrompt || undefined,
+        editRegion: editRegion || undefined,
       });
 
       const newRes = await orchestrateImageGeneration({
@@ -184,12 +210,15 @@ export async function POST(req: NextRequest) {
         prompt: compiled.prompt,
         negativePrompt: compiled.negativePrompt,
         aspectRatio: session.aspectRatio,
+        resolution: targetResolution,
         provider: session.provider,
         originalPhotos: photoBuffers,
         backgroundRef: bgBuffer,
         sampleRef: sampleBuffer,
         currentImageRef: currentImageBuffer,
+        annotatedGuideRef: annotatedGuideBuffer,
         editPrompt: cleanEditPrompt || undefined,
+        editRegion: editRegion || undefined,
         productDetails: session.productDetails,
         useHybridOverlay: effectiveUseOverlay,
         onLog: (entry) => logs.push(entry),
@@ -224,11 +253,12 @@ export async function POST(req: NextRequest) {
         localPath: filePath,
         cleanLocalPath: cleanFilePath,
         aspectRatio: session.aspectRatio,
+        resolution: targetResolution,
         promptUsed: compiled.prompt,
         editPromptUsed: cleanEditPrompt || undefined,
+        editRegionUsed: editRegion || undefined,
         provider: session.provider,
         createdAt: now,
-        hasOverlayBadge: session.productDetails.showPriceBadge,
       };
 
       if (style === "style1_hero") session.currentResults.style1 = newRecord;

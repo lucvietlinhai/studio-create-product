@@ -2,6 +2,7 @@ import {
   AspectRatio,
   ColorTone,
   ConceptMode,
+  EditRegionBox,
   PackagingOption,
   ProductDetails,
   ShotStyle,
@@ -297,7 +298,14 @@ export function expandCommercialEditPrompt(params: {
     );
   }
 
-  // 4. Style-specific guidance
+  // 4. Detect Price Badge, Promotional Tag, Warranty Stamp, or Custom Typography Insertion
+  if (/giá|bảng giá|sale|giảm|ưu đãi|khuyến mãi|đ|vnd|freeship|bảo hành|tem|nhãn|huy hiệu|badge|price|discount/i.test(lower)) {
+    enhancements.push(
+      "COMMERCIAL BADGE & TYPOGRAPHY DESIGN: Render a sleek, modern, high-contrast commercial e-commerce badge / price tag / promotional callout with razor-sharp, legible Vietnamese typography and exact numbers as requested by the user. Use clean graphic design hierarchy, subtle drop shadow, and premium color contrast without obstructing the core product body."
+    );
+  }
+
+  // 5. Style-specific guidance
   if (params.style === "style3_callout") {
     if (/bỏ chữ|không có chữ|xóa chữ|xóa thông số|ẩn chữ|nền sạch/i.test(lower)) {
       enhancements.push(
@@ -305,7 +313,7 @@ export function expandCommercialEditPrompt(params: {
       );
     } else {
       enhancements.push(
-        "INFOGRAPHIC LAYOUT: Keep the right and upper areas of the image uncluttered (35% open background space) with soft clean lighting so that commercial typography indicators can be read clearly."
+        "INFOGRAPHIC LAYOUT: Keep the left, right, and upper areas of the image uncluttered with soft clean lighting so that commercial typography indicators can be read clearly."
       );
     }
   }
@@ -323,6 +331,7 @@ export function compileStylePrompt(params: {
   aspectRatio: AspectRatio;
   useHybridOverlay?: boolean;
   editPrompt?: string;
+  editRegion?: EditRegionBox;
 }): { prompt: string; negativePrompt: string } {
   const {
     style,
@@ -331,9 +340,10 @@ export function compileStylePrompt(params: {
     aspectRatio,
     useHybridOverlay = true,
     editPrompt,
+    editRegion,
   } = params;
 
-  // 0. High-Priority User Edit Directive (Rule 0 for Image Modification)
+  // 0. High-Priority User Edit Directive (Rule 0 for Image Modification & Localized Region Inpainting)
   if (editPrompt && editPrompt.trim().length > 0) {
     const cleanEdit = editPrompt.trim();
     const expandedDetails = expandCommercialEditPrompt({
@@ -343,20 +353,33 @@ export function compileStylePrompt(params: {
       aspectRatio,
     });
 
+    const x1 = editRegion ? Math.round(editRegion.xPercent) : null;
+    const y1 = editRegion ? Math.round(editRegion.yPercent) : null;
+    const x2 = editRegion ? Math.min(100, Math.round(editRegion.xPercent + editRegion.widthPercent)) : null;
+    const y2 = editRegion ? Math.min(100, Math.round(editRegion.yPercent + editRegion.heightPercent)) : null;
+
+    const regionDirective = editRegion
+      ? `[LOCALIZED REGION INPAINTING - PRECISION TARGET FOCUS]:
+- SELECTED TARGET REGION: ${editRegion.zoneLabel} (Horizontal X: ${x1}% to ${x2}%, Vertical Y: ${y1}% to ${y2}%).
+- Reference Image 1 is the CLEAN base photograph. Reference Image 2 displays a translucent CYAN HIGHLIGHT MASK marking the EXACT area selected by the user.
+- STRICT REGION FOCUS: Apply the user's edit command ("${cleanEdit}") SPECIFICALLY and EXCLUSIVELY within the selected region (${editRegion.zoneLabel}, X: ${x1}%–${x2}%, Y: ${y1}%–${y2}%) shown by the cyan highlight in Reference Image 2.
+- PRESERVE UNSELECTED AREAS: Keep all areas outside the selected region 100% identical to Reference Image 1.
+- CLEAN FINAL RENDER: NEVER render the cyan selection highlight or dashed guide border in your final output—replace that marked zone seamlessly with the requested visual modification!`
+      : "";
+
     const editPromptText = `[PRIMARY MISSION - BOLD COMMERCIAL IMAGE EDITING]:
 You are an expert commercial advertising director and CGI photographer performing a visual transformation of this photoshoot.
 
 USER'S MANDATORY EDIT COMMAND:
 >>> "${cleanEdit}" <<<
 
-${expandedDetails ? `EXPANDED PHOTOGRAPHIC BLUEPRINT:\n${expandedDetails}\n` : ""}
+${regionDirective ? `${regionDirective}\n\n` : ""}${expandedDetails ? `EXPANDED PHOTOGRAPHIC BLUEPRINT:\n${expandedDetails}\n` : ""}
 EXECUTION MANDATES:
-1. DOMINANT VISUAL TRANSFORMATION:
-   - Faithfully, vividly, and boldly transform the photoshoot to match the user's edit command: "${cleanEdit}".
-   - Completely discard any conflicting previous background or lighting if the user requested a new setting or theme.
-   - If a new environment, surface, season, or lighting is specified, fully materialize it with commercial advertising quality.
+1. ${editRegion ? "PRECISION LOCALIZED MODIFICATION" : "DOMINANT VISUAL TRANSFORMATION"}:
+   - Faithfully, vividly, and accurately execute the user's edit command: "${cleanEdit}"${editRegion ? ` right inside the selected target region (${editRegion.zoneLabel}, X: ${x1}%..${x2}%, Y: ${y1}%..${y2}%)` : ""}.
+   - ${editRegion ? "Blend lighting, shadows, perspective, and typography naturally into the existing studio scene of Reference Image 1." : "Completely discard any conflicting previous background or lighting if the user requested a new setting or theme."}
 2. ABSOLUTE PRODUCT FIDELITY:
-   - Faithfully maintain the authentic physical product (${productDetails.title || "product"}) from Reference Image 2 (or Image 0).
+   - Faithfully maintain the authentic physical product (${productDetails.title || "product"}) from the reference images.
    - Maintain 100% exact brand logo typography, buttons, ports, colors, and authentic material textures. Never mutate or alter authentic branding.
 3. COMMERCIAL PHOTOGRAPHY STANDARDS:
    - Professional studio grade, razor-sharp focus on the product, seamless ambient occlusion contact shadows, realistic surface reflections, 8K commercial clarity, edge-to-edge full bleed (${aspectRatio} aspect ratio).
@@ -364,7 +387,7 @@ EXECUTION MANDATES:
 
     return {
       prompt: editPromptText,
-      negativePrompt: `${STRICT_NEGATIVE_PROMPT}, duplicate text, double typography, ghosting labels, blurry foreground, low quality, warped logos, picture frame, white border`,
+      negativePrompt: `${STRICT_NEGATIVE_PROMPT}, cyan mask overlay, selection box border, dashed guide rectangle, duplicate text, double typography, ghosting labels, blurry foreground, low quality, warped logos, picture frame, white border`,
     };
   }
 

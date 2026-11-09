@@ -41,14 +41,18 @@ import {
   Lock,
   Cpu,
   Pencil,
+  Crosshair,
+  Undo2,
+  Square,
+  Paintbrush,
 } from "lucide-react";
 import {
   ProductSession,
   ProductDetails,
-  PriceBadgePosition,
-  PriceBadgeTheme,
   ConceptMode,
   AspectRatio,
+  ImageResolution,
+  EditRegionBox,
   AIProvider,
   PackagingOption,
   ColorTone,
@@ -61,59 +65,172 @@ import {
 import { BUILT_IN_PRESETS } from "@/lib/config/presets";
 import { COLOR_TONE_CATALOG } from "@/lib/agents/director-agent";
 
-const PRICE_BADGE_POSITIONS: { id: PriceBadgePosition; label: string; icon: string; short: string }[] = [
-  { id: "top-left", label: "Góc Trên - Trái", icon: "↖", short: "Trên Trái" },
-  { id: "top-center", label: "Góc Trên - Giữa", icon: "⬆", short: "Trên Giữa" },
-  { id: "top-right", label: "Góc Trên - Phải", icon: "↗", short: "Trên Phải" },
-  { id: "center-left", label: "Ở Giữa - Trái", icon: "⬅", short: "Giữa Trái" },
-  { id: "center", label: "Chính Giữa", icon: "⏺", short: "Giữa" },
-  { id: "center-right", label: "Ở Giữa - Phải", icon: "➡", short: "Giữa Phải" },
-  { id: "bottom-left", label: "Góc Dưới - Trái", icon: "↙", short: "Dưới Trái" },
-  { id: "bottom-center", label: "Góc Dưới - Giữa", icon: "⬇", short: "Dưới Giữa" },
-  { id: "bottom-right", label: "Góc Dưới - Phải", icon: "↘", short: "Dưới Phải" },
+const IMAGE_RESOLUTIONS: {
+  id: ImageResolution;
+  label: string;
+  subLabel: string;
+  badge: string;
+}[] = [
+  { id: "1K", label: "1K HD", subLabel: "1024px • Chuẩn TMĐT", badge: "Nhanh" },
+  { id: "2K", label: "2K QHD", subLabel: "2048px • Sắc nét cao", badge: "Khuyên dùng" },
+  { id: "4K", label: "4K Ultra HD", subLabel: "4096px • Siêu nét In ấn", badge: "UHD" },
 ];
 
-const PRICE_BADGE_THEMES: {
-  id: PriceBadgeTheme;
-  name: string;
-  icon: string;
-  gradientClass: string;
-  borderClass: string;
-  badgeTextColor: string;
-}[] = [
-  {
-    id: "flash_sale",
-    name: "Flash Sale Đỏ Lửa",
-    icon: "🔥",
-    gradientClass: "from-red-600 via-rose-700 to-amber-900",
-    borderClass: "border-amber-400/80 shadow-rose-600/30",
-    badgeTextColor: "text-amber-300",
-  },
-  {
-    id: "luxury_gold",
-    name: "Luxury Gold 24K",
-    icon: "👑",
-    gradientClass: "from-stone-900 via-zinc-950 to-black",
-    borderClass: "border-amber-400 shadow-amber-500/25",
-    badgeTextColor: "text-amber-400",
-  },
-  {
-    id: "tiktok_neon",
-    name: "TikTok Cyber Neon",
-    icon: "⚡",
-    gradientClass: "from-pink-600 via-purple-600 to-blue-600",
-    borderClass: "border-pink-400/80 shadow-pink-500/30",
-    badgeTextColor: "text-cyan-300",
-  },
-  {
-    id: "emerald_eco",
-    name: "Emerald Tinh Khiết",
-    icon: "🌿",
-    gradientClass: "from-emerald-600 via-teal-700 to-emerald-950",
-    borderClass: "border-emerald-300/80 shadow-emerald-500/30",
-    badgeTextColor: "text-emerald-200",
-  },
-];
+type RegionStroke =
+  | {
+      type: "brush";
+      radiusNorm: number; // Normalized radius (0.015 .. 0.065)
+      points: { x: number; y: number }[]; // Normalized 0..1
+    }
+  | {
+      type: "box";
+      x1: number;
+      y1: number;
+      x2: number;
+      y2: number;
+    };
+
+function computeRegionBoxFromStrokes(strokes: RegionStroke[]): EditRegionBox | null {
+  if (!strokes || strokes.length === 0) return null;
+  let minX = 1;
+  let minY = 1;
+  let maxX = 0;
+  let maxY = 0;
+
+  for (const s of strokes) {
+    if (s.type === "brush") {
+      for (const pt of s.points) {
+        minX = Math.min(minX, Math.max(0, pt.x - s.radiusNorm));
+        minY = Math.min(minY, Math.max(0, pt.y - s.radiusNorm));
+        maxX = Math.max(maxX, Math.min(1, pt.x + s.radiusNorm));
+        maxY = Math.max(maxY, Math.min(1, pt.y + s.radiusNorm));
+      }
+    } else {
+      const left = Math.min(s.x1, s.x2);
+      const right = Math.max(s.x1, s.x2);
+      const top = Math.min(s.y1, s.y2);
+      const bottom = Math.max(s.y1, s.y2);
+      minX = Math.min(minX, Math.max(0, left));
+      minY = Math.min(minY, Math.max(0, top));
+      maxX = Math.max(maxX, Math.min(1, right));
+      maxY = Math.max(maxY, Math.min(1, bottom));
+    }
+  }
+
+  if (maxX <= minX || maxY <= minY) return null;
+
+  const cx = (minX + maxX) / 2;
+  const cy = (minY + maxY) / 2;
+  const hZone = cx < 0.36 ? "Bên Trái (Left)" : cx > 0.64 ? "Bên Phải (Right)" : "Chính Giữa (Center)";
+  const vZone = cy < 0.36 ? "Góc Trên (Top)" : cy > 0.64 ? "Góc Dưới (Bottom)" : "Trung Tâm (Middle)";
+
+  return {
+    xPercent: Math.round(minX * 100),
+    yPercent: Math.round(minY * 100),
+    widthPercent: Math.max(4, Math.round((maxX - minX) * 100)),
+    heightPercent: Math.max(4, Math.round((maxY - minY) * 100)),
+    zoneLabel: `${vZone} - ${hZone}`,
+  };
+}
+
+async function generateAnnotatedGuideDataUrl(
+  imageUrl: string,
+  strokes: RegionStroke[],
+  regionBox: EditRegionBox
+): Promise<string | undefined> {
+  if (!strokes || strokes.length === 0) return undefined;
+  return new Promise((resolve) => {
+    try {
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      img.onload = () => {
+        try {
+          const maxDim = 1024;
+          const natW = img.naturalWidth || 1024;
+          const natH = img.naturalHeight || 1024;
+          const scale = Math.min(1, maxDim / Math.max(natW, natH));
+          const w = Math.max(256, Math.round(natW * scale));
+          const h = Math.max(256, Math.round(natH * scale));
+
+          const canvas = document.createElement("canvas");
+          canvas.width = w;
+          canvas.height = h;
+          const ctx = canvas.getContext("2d");
+          if (!ctx) {
+            resolve(undefined);
+            return;
+          }
+
+          // 1. Draw clean base image
+          ctx.drawImage(img, 0, 0, w, h);
+
+          // 2. Render uniform mask on offscreen layer
+          const maskCanvas = document.createElement("canvas");
+          maskCanvas.width = w;
+          maskCanvas.height = h;
+          const mCtx = maskCanvas.getContext("2d");
+          if (mCtx) {
+            mCtx.fillStyle = "#38bdf8";
+            mCtx.strokeStyle = "#38bdf8";
+            mCtx.lineCap = "round";
+            mCtx.lineJoin = "round";
+
+            for (const s of strokes) {
+              if (s.type === "brush") {
+                const lineW = Math.max(12, s.radiusNorm * 2 * Math.min(w, h));
+                mCtx.lineWidth = lineW;
+                if (s.points.length === 1) {
+                  mCtx.beginPath();
+                  mCtx.arc(s.points[0].x * w, s.points[0].y * h, lineW / 2, 0, Math.PI * 2);
+                  mCtx.fill();
+                } else if (s.points.length > 1) {
+                  mCtx.beginPath();
+                  mCtx.moveTo(s.points[0].x * w, s.points[0].y * h);
+                  for (let i = 1; i < s.points.length; i++) {
+                    mCtx.lineTo(s.points[i].x * w, s.points[i].y * h);
+                  }
+                  mCtx.stroke();
+                }
+              } else {
+                const bx = Math.min(s.x1, s.x2) * w;
+                const by = Math.min(s.y1, s.y2) * h;
+                const bw = Math.abs(s.x2 - s.x1) * w;
+                const bh = Math.abs(s.y2 - s.y1) * h;
+                mCtx.fillRect(bx, by, bw, bh);
+              }
+            }
+
+            ctx.save();
+            ctx.globalAlpha = 0.44;
+            ctx.drawImage(maskCanvas, 0, 0);
+            ctx.restore();
+          }
+
+          // 3. Draw crisp dashed target boundary around regionBox
+          ctx.save();
+          ctx.strokeStyle = "#38bdf8";
+          ctx.lineWidth = Math.max(2.5, Math.round(Math.min(w, h) * 0.0035));
+          ctx.setLineDash([10, 6]);
+          ctx.strokeRect(
+            (regionBox.xPercent / 100) * w,
+            (regionBox.yPercent / 100) * h,
+            (regionBox.widthPercent / 100) * w,
+            (regionBox.heightPercent / 100) * h
+          );
+          ctx.restore();
+
+          resolve(canvas.toDataURL("image/jpeg", 0.9));
+        } catch {
+          resolve(undefined);
+        }
+      };
+      img.onerror = () => resolve(undefined);
+      img.src = imageUrl;
+    } catch {
+      resolve(undefined);
+    }
+  });
+}
 
 interface EditPromptCategory {
   title: string;
@@ -122,6 +239,16 @@ interface EditPromptCategory {
 }
 
 const EDIT_PROMPT_CATEGORIES: EditPromptCategory[] = [
+  {
+    title: "Bảng Giá, Tem & Thông Tin (Khoanh vùng để chèn)",
+    badge: "🏷️",
+    items: [
+      "Thêm bảng giá Flash Sale 389.000đ (Giá gốc 590.000đ - Giảm 34%) tại vùng khoanh",
+      "Chèn huy hiệu Luxury Gold ghi Giá Ưu Đãi & Freeship tại vùng chọn",
+      "Thêm tem Bảo Hành Chính Hãng 12 Tháng 1 Đổi 1 tại vùng chọn",
+      "Thêm nhãn Quà Tặng Kèm / Mua 1 Tặng 1 nổi bật tại vùng chọn",
+    ],
+  },
   {
     title: "Bối Cảnh & Không Gian",
     badge: "🏖️",
@@ -166,7 +293,7 @@ export default function StudioPage() {
   const [backgroundRef, setBackgroundRef] = useState<string | null>(null);
   const [sampleRef, setSampleRef] = useState<string | null>(null);
 
-  // --- Image Edit (Prompt Inpainting/Modification) States ---
+  // --- Image Edit (Prompt & Interactive Region Inpainting) States ---
   const [editingStyle, setEditingStyle] = useState<ShotStyle | null>(null);
   const [editPromptInputs, setEditPromptInputs] = useState<Record<ShotStyle, string>>({
     style1_hero: "",
@@ -175,6 +302,16 @@ export default function StudioPage() {
   });
   const [isSubmittingEdit, setIsSubmittingEdit] = useState<ShotStyle | null>(null);
 
+  // Interactive Region Selection (ChatGPT-style Brush & Box Inpainting)
+  const [selectionTool, setSelectionTool] = useState<"brush" | "box">("brush");
+  const [brushRadiusNorm, setBrushRadiusNorm] = useState<number>(0.036);
+  const [regionStrokesByStyle, setRegionStrokesByStyle] = useState<Record<ShotStyle, RegionStroke[]>>({
+    style1_hero: [],
+    style2_grid2x2: [],
+    style3_callout: [],
+  });
+  const [activeDrawingStroke, setActiveDrawingStroke] = useState<RegionStroke | null>(null);
+
   const [title, setTitle] = useState("");
   const [category, setCategory] = useState("");
   const [description, setDescription] = useState("");
@@ -182,11 +319,6 @@ export default function StudioPage() {
   const [policyText, setPolicyText] = useState("");
   const [features, setFeatures] = useState<string[]>([]);
   const [isAnalyzingProduct, setIsAnalyzingProduct] = useState(false);
-  const [originalPrice, setOriginalPrice] = useState("590.000₫");
-  const [salePrice, setSalePrice] = useState("389.000₫");
-  const [showPriceBadge, setShowPriceBadge] = useState(false);
-  const [priceBadgePosition, setPriceBadgePosition] = useState<PriceBadgePosition>("top-right");
-  const [priceBadgeTheme, setPriceBadgeTheme] = useState<PriceBadgeTheme>("flash_sale");
 
   const [packagingOption, setPackagingOption] = useState<PackagingOption>("auto_detect");
   const [colorTone, setColorTone] = useState<ColorTone>("auto");
@@ -196,6 +328,7 @@ export default function StudioPage() {
   const [selectedPresetId, setSelectedPresetId] = useState("luxury_podium");
   const [conceptPrompt, setConceptPrompt] = useState("");
   const [aspectRatio, setAspectRatio] = useState<AspectRatio>("1:1");
+  const [resolution, setResolution] = useState<ImageResolution>("1K");
   const [provider, setProvider] = useState<AIProvider>("sangtao");
 
   // Collapsible Accordion Sections in Left Sidebar
@@ -214,7 +347,6 @@ export default function StudioPage() {
   const [isGeneratingAll, setIsGeneratingAll] = useState(false);
   const [isGeneratingConcept, setIsGeneratingConcept] = useState(false);
   const [regeneratingStyle, setRegeneratingStyle] = useState<ShotStyle | null>(null);
-  const [isUpdatingPriceBadge, setIsUpdatingPriceBadge] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string>("");
 
   // --- History & Settings Drawers ---
@@ -658,7 +790,7 @@ export default function StudioPage() {
       "info",
       "System",
       "Khởi chạy tiến trình (Bước 1: Ảnh Hero)",
-      `Sản phẩm: "${title || "Tự động nhận diện"}" | Tỷ lệ: ${aspectRatio} | Provider: ${activeProvider.toUpperCase()}`
+      `Sản phẩm: "${title || "Tự động nhận diện"}" | Tỷ lệ: ${aspectRatio} | Chất lượng: ${resolution} | Provider: ${activeProvider.toUpperCase()}`
     );
     appendLog(
       "info",
@@ -677,11 +809,6 @@ export default function StudioPage() {
           packagingHighlights,
           policyText,
           highlightFeatures: features.filter((f) => f && f.trim().length > 0),
-          originalPrice,
-          salePrice,
-          showPriceBadge,
-          priceBadgePosition,
-          priceBadgeTheme,
         },
         conceptMode,
         conceptPresetId: selectedPresetId,
@@ -690,6 +817,7 @@ export default function StudioPage() {
         colorTone,
         lockSameBackground,
         aspectRatio,
+        resolution,
         provider: activeProvider,
         useHybridOverlay: true, // Always true as requested
         originalPhotos: productPhotos,
@@ -782,6 +910,7 @@ export default function StudioPage() {
         body: JSON.stringify({
           sessionId: currentSession.id,
           dateFolder: currentSession.dateFolder,
+          resolution,
         }),
       });
 
@@ -816,58 +945,6 @@ export default function StudioPage() {
     }
   };
 
-  // Cập nhật lại vị trí / thông số nhãn giá ngay lập tức mà không cần tạo lại AI
-  const handleUpdatePriceBadgeNow = async () => {
-    if (!currentSession || !currentSession.currentResults.style1) {
-      alert("Chưa có ảnh Hero trong phiên hiện tại để cập nhật!");
-      return;
-    }
-    setIsUpdatingPriceBadge(true);
-    appendLog(
-      "info",
-      "Compositor",
-      "Cập nhật vị trí nhãn giá",
-      `Đang gán lại nhãn giá tại vị trí: ${PRICE_BADGE_POSITIONS.find((p) => p.id === priceBadgePosition)?.label}...`
-    );
-
-    try {
-      const res = await fetch("/api/update-price-badge", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          dateFolder: currentSession.dateFolder,
-          sessionId: currentSession.id,
-          priceBadgePosition,
-          priceBadgeTheme,
-          salePrice,
-          originalPrice,
-          showPriceBadge,
-        }),
-      });
-
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok || !data.success) {
-        throw new Error(data.error || "Không thể cập nhật nhãn giá");
-      }
-
-      if (data.session) {
-        setCurrentSession(data.session);
-        fetchHistory();
-      }
-      appendLog(
-        "success",
-        "Compositor",
-        "Cập nhật vị trí bảng giá thành công",
-        `Đã đặt lại nhãn giá tại "${PRICE_BADGE_POSITIONS.find((p) => p.id === priceBadgePosition)?.label}" an toàn, chuẩn thương mại.`
-      );
-    } catch (err: any) {
-      appendLog("error", "Compositor", "Lỗi cập nhật bảng giá", err.message);
-      alert(err.message || "Lỗi cập nhật bảng giá");
-    } finally {
-      setIsUpdatingPriceBadge(false);
-    }
-  };
-
   // Regenerate Single Card Style
   const handleRegenerateStyle = async (style: ShotStyle) => {
     if (!currentSession) return;
@@ -877,7 +954,7 @@ export default function StudioPage() {
       "info",
       "System",
       "Yêu cầu tạo lại ảnh",
-      `Đang khởi chạy tạo lại phiên bản cho phong cách: ${style}...`
+      `Đang khởi chạy tạo lại phiên bản cho phong cách: ${style} (Chuẩn ${resolution})...`
     );
 
     try {
@@ -888,6 +965,7 @@ export default function StudioPage() {
           dateFolder: currentSession.dateFolder,
           sessionId: currentSession.id,
           targetStyle: style,
+          resolution,
         }),
       });
 
@@ -929,13 +1007,42 @@ export default function StudioPage() {
     }
   };
 
-  // Apply Prompt Edit to a specific style
+  // Open Full Interactive Region Selection Canvas (ChatGPT-style Inpainting) in Lightbox
+  const handleOpenRegionEditor = (style: ShotStyle) => {
+    if (!currentSession) return;
+    const rec =
+      style === "style1_hero"
+        ? currentSession.currentResults.style1
+        : style === "style2_grid2x2"
+          ? currentSession.currentResults.style2
+          : currentSession.currentResults.style3;
+    if (rec?.imageUrl) {
+      setPreviewZoomImage(rec.imageUrl);
+      setLightboxEditActive(true);
+    }
+  };
+
+  // Apply Prompt Edit (+ Optional Selected Region Inpainting) to a specific style
   const handleApplyEdit = async (style: ShotStyle) => {
     if (!currentSession) return;
     const promptText = (editPromptInputs[style] || "").trim();
     if (!promptText) {
       alert("Vui lòng nhập mô tả hoặc yêu cầu chỉnh sửa cho bức ảnh!");
       return;
+    }
+
+    const activeRec =
+      style === "style1_hero"
+        ? currentSession.currentResults.style1
+        : style === "style2_grid2x2"
+          ? currentSession.currentResults.style2
+          : currentSession.currentResults.style3;
+
+    const strokes = regionStrokesByStyle[style] || [];
+    const editRegion = computeRegionBoxFromStrokes(strokes);
+    let annotatedGuideDataUrl: string | undefined;
+    if (editRegion && activeRec?.imageUrl) {
+      annotatedGuideDataUrl = await generateAnnotatedGuideDataUrl(activeRec.imageUrl, strokes, editRegion);
     }
 
     setIsSubmittingEdit(style);
@@ -945,7 +1052,11 @@ export default function StudioPage() {
       "info",
       "System",
       "Khởi chạy AI Chỉnh sửa ảnh",
-      `Phong cách: ${style} | Yêu cầu: "${promptText}"`
+      `Phong cách: ${style} | Chất lượng: ${resolution} | ${
+        editRegion
+          ? `Vùng khoanh: ${editRegion.zoneLabel} (X: ${editRegion.xPercent}%–${Math.min(100, editRegion.xPercent + editRegion.widthPercent)}%, Y: ${editRegion.yPercent}%–${Math.min(100, editRegion.yPercent + editRegion.heightPercent)}%)`
+          : "Phạm vi: Toàn ảnh"
+      } | Yêu cầu: "${promptText}"`
     );
 
     try {
@@ -957,6 +1068,9 @@ export default function StudioPage() {
           sessionId: currentSession.id,
           targetStyle: style,
           editPrompt: promptText,
+          editRegion: editRegion || undefined,
+          annotatedGuideDataUrl,
+          resolution,
         }),
       });
 
@@ -987,13 +1101,15 @@ export default function StudioPage() {
           `Đã lưu phiên bản mới của ${style} theo mô tả: "${promptText}".`
         );
         setEditingStyle(null);
+        // Clear region selection strokes after applying edit
+        setRegionStrokesByStyle((prev) => ({ ...prev, [style]: [] }));
         // Automatically sync updated image URL in zoom preview
         const updatedRec =
           style === "style1_hero"
             ? data.session.currentResults?.style1
             : style === "style2_grid2x2"
-            ? data.session.currentResults?.style2
-            : data.session.currentResults?.style3;
+              ? data.session.currentResults?.style2
+              : data.session.currentResults?.style3;
         if (updatedRec?.imageUrl && previewZoomImage) {
           setPreviewZoomImage(updatedRec.imageUrl);
         }
@@ -1356,242 +1472,6 @@ export default function StudioPage() {
                       className="w-full rounded-xl border border-white/[0.12] bg-[#0c101c] p-2.5 text-xs text-slate-100 focus:border-indigo-500 focus:outline-none resize-none"
                     />
                   </div>
-
-                  {/* Hiển thị giá sản phẩm */}
-                  <div className="rounded-xl border border-white/[0.08] bg-[#0c101c]/80 p-3">
-                    <div className="flex items-center justify-between">
-                      <label className="flex items-center gap-2 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={showPriceBadge}
-                          onChange={(e) => setShowPriceBadge(e.target.checked)}
-                          className="rounded border-white/[0.2] bg-[#090d16] text-rose-500 focus:ring-0 h-3.5 w-3.5"
-                        />
-                        <span className="text-[11px] font-medium text-slate-200">
-                          Hiển thị giá sản phẩm
-                        </span>
-                      </label>
-                      {showPriceBadge && (
-                        <span className="text-[9px] px-1.5 py-0.5 rounded bg-rose-500/10 text-rose-300 border border-rose-500/20 font-medium">
-                          Đang bật
-                        </span>
-                      )}
-                    </div>
-
-                    {showPriceBadge && (
-                      <div className="space-y-2.5 pt-2.5">
-                        <div className="grid grid-cols-2 gap-2">
-                          <div>
-                            <label className="text-[10px] text-slate-400 block mb-0.5">Giá Niêm Yết</label>
-                            <input
-                              type="text"
-                              value={originalPrice}
-                              onChange={(e) => setOriginalPrice(e.target.value)}
-                              placeholder="VD: 590.000₫"
-                              className="w-full h-8 px-2.5 rounded-lg border border-white/[0.1] bg-[#090d16] text-xs text-slate-200 focus:border-indigo-500 focus:outline-none"
-                            />
-                          </div>
-                          <div>
-                            <label className="text-[10px] text-rose-400 font-medium block mb-0.5">
-                              Giá Khuyến Mại
-                            </label>
-                            <input
-                              type="text"
-                              value={salePrice}
-                              onChange={(e) => setSalePrice(e.target.value)}
-                              placeholder="VD: 389.000₫"
-                              className="w-full h-8 px-2.5 rounded-lg border border-rose-500/30 bg-[#090d16] text-xs font-bold text-rose-400 focus:border-rose-400 focus:outline-none"
-                            />
-                          </div>
-                        </div>
-
-                        {/* Cấu hình vị trí đặt giá trên ảnh */}
-                        <div className="pt-2 border-t border-white/[0.06]">
-                          <div className="flex items-center justify-between mb-1.5">
-                            <span className="text-[10px] text-slate-400">Vị trí đặt giá trên ảnh:</span>
-                            <span className="text-[10px] text-rose-400 font-semibold">
-                              {PRICE_BADGE_POSITIONS.find((p) => p.id === priceBadgePosition)?.label || "Góc Trên - Phải"}
-                            </span>
-                          </div>
-
-                          <div className="grid grid-cols-3 gap-1.5 bg-[#080c14] p-1.5 rounded-lg border border-white/[0.08]">
-                            {PRICE_BADGE_POSITIONS.map((pos) => {
-                              const active = priceBadgePosition === pos.id;
-                              return (
-                                <button
-                                  key={pos.id}
-                                  type="button"
-                                  onClick={() => setPriceBadgePosition(pos.id)}
-                                  className={`flex items-center justify-center gap-1 py-1.5 px-1 rounded-md text-[10px] transition-all ${
-                                    active
-                                      ? "bg-rose-500 text-white font-bold shadow-md shadow-rose-500/30 border border-rose-400"
-                                      : "bg-white/[0.03] text-slate-400 hover:text-slate-200 hover:bg-white/[0.07] border border-white/[0.04]"
-                                  }`}
-                                  title={pos.label}
-                                >
-                                  <span className="text-xs">{pos.icon}</span>
-                                  <span className="truncate">{pos.short}</span>
-                                </button>
-                              );
-                            })}
-                          </div>
-                        </div>
-
-                        {/* Phong cách huy hiệu giá */}
-                        <div className="pt-2 border-t border-white/[0.06]">
-                          <div className="flex items-center justify-between mb-1.5">
-                            <span className="text-[10px] text-slate-400">Giao diện huy hiệu:</span>
-                            <span className="text-[10px] text-amber-400 font-semibold">
-                              {PRICE_BADGE_THEMES.find((t) => t.id === priceBadgeTheme)?.name || "Flash Sale Đỏ Lửa"}
-                            </span>
-                          </div>
-
-                          <div className="grid grid-cols-2 gap-1.5">
-                            {PRICE_BADGE_THEMES.map((th) => {
-                              const active = priceBadgeTheme === th.id;
-                              return (
-                                <button
-                                  key={th.id}
-                                  type="button"
-                                  onClick={() => setPriceBadgeTheme(th.id)}
-                                  className={`flex items-center gap-1.5 p-1.5 rounded-lg text-left transition-all border ${
-                                    active
-                                      ? "bg-white/[0.08] border-amber-400 text-white shadow-md ring-1 ring-amber-400/40"
-                                      : "bg-white/[0.02] border-white/[0.06] text-slate-400 hover:text-slate-200 hover:bg-white/[0.05]"
-                                  }`}
-                                >
-                                  <span className="text-sm">{th.icon}</span>
-                                  <span className="text-[10px] font-semibold text-white truncate">{th.name}</span>
-                                </button>
-                              );
-                            })}
-                          </div>
-                        </div>
-
-                        {/* Live Mini Preview Nhãn Giá & Mô Phỏng Vị Trí Khung Ảnh */}
-                        <div className="p-2.5 rounded-xl border border-white/[0.08] bg-[#070a12] flex flex-col gap-2 shadow-inner">
-                          <div className="flex items-center justify-between text-[9.5px] text-slate-400">
-                            <span className="flex items-center gap-1 font-medium">
-                              <Sparkles className="h-2.5 w-2.5 text-amber-400" />
-                              Mô phỏng vị trí thực tế trên khung ảnh:
-                            </span>
-                            <span className="text-[9.5px] text-rose-400 font-bold">
-                              {PRICE_BADGE_POSITIONS.find((p) => p.id === priceBadgePosition)?.label}
-                            </span>
-                          </div>
-
-                          {/* Khung mô phỏng tỷ lệ ảnh & safe zone */}
-                          <div className="relative h-36 w-full rounded-xl bg-gradient-to-b from-[#0f1424] via-[#090d18] to-[#060810] border border-white/10 overflow-hidden flex items-center justify-center shadow-inner">
-                            {/* Đường biên Safe Zone an toàn thương mại (dashed) */}
-                            <div className="absolute inset-2.5 rounded-lg border border-dashed border-white/15 pointer-events-none flex items-center justify-center">
-                              <span className="text-[7.5px] text-slate-600 font-mono select-none tracking-widest uppercase opacity-70">
-                                Vùng An Toàn • Safe Zone
-                              </span>
-                            </div>
-
-                            {/* Mô phỏng sản phẩm & bục podium ở giữa */}
-                            <div className="relative flex flex-col items-center justify-center opacity-35 pointer-events-none">
-                              <div className="w-10 h-16 rounded-md bg-gradient-to-t from-slate-700 to-slate-500 shadow-md border border-white/20 mb-[-4px] z-10 flex items-center justify-center">
-                                <span className="text-[7px] font-bold text-white/70">SP</span>
-                              </div>
-                              <div className="w-20 h-4 rounded-[50%] bg-slate-600/60 border border-white/10 shadow-lg" />
-                            </div>
-
-                            {/* Huy hiệu giá di chuyển mượt mà tới vị trí đã chọn */}
-                            <div
-                              className={`absolute transition-all duration-300 ease-out z-20 ${
-                                priceBadgePosition === "top-left"
-                                  ? "top-3 left-3"
-                                  : priceBadgePosition === "top-center"
-                                  ? "top-3 left-1/2 -translate-x-1/2"
-                                  : priceBadgePosition === "top-right"
-                                  ? "top-3 right-3"
-                                  : priceBadgePosition === "center-left"
-                                  ? "top-1/2 left-3 -translate-y-1/2"
-                                  : priceBadgePosition === "center"
-                                  ? "top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2"
-                                  : priceBadgePosition === "center-right"
-                                  ? "top-1/2 right-3 -translate-y-1/2"
-                                  : priceBadgePosition === "bottom-left"
-                                  ? "bottom-3 left-3"
-                                  : priceBadgePosition === "bottom-center"
-                                  ? "bottom-3 left-1/2 -translate-x-1/2"
-                                  : "bottom-3 right-3"
-                              }`}
-                            >
-                              <div
-                                className={`px-2 py-1 rounded-lg border shadow-xl flex flex-col gap-0.5 min-w-[105px] backdrop-blur-sm ${
-                                  priceBadgeTheme === "luxury_gold"
-                                    ? "bg-gradient-to-br from-stone-900 to-zinc-950 border-amber-400/80 text-amber-300 shadow-amber-500/15"
-                                    : priceBadgeTheme === "tiktok_neon"
-                                    ? "bg-gradient-to-br from-pink-600 to-blue-600 border-pink-300/80 text-white shadow-pink-500/20"
-                                    : priceBadgeTheme === "emerald_eco"
-                                    ? "bg-gradient-to-br from-emerald-600 to-emerald-950 border-emerald-300/80 text-white shadow-emerald-500/20"
-                                    : "bg-gradient-to-br from-red-600 to-rose-950 border-amber-400/80 text-white shadow-rose-600/25"
-                                }`}
-                              >
-                                <div className="flex items-center justify-between gap-1 text-[7px] font-black">
-                                  <span className="truncate">
-                                    {priceBadgeTheme === "luxury_gold"
-                                      ? "👑 VIP"
-                                      : priceBadgeTheme === "tiktok_neon"
-                                      ? "⚡ TIKTOK"
-                                      : priceBadgeTheme === "emerald_eco"
-                                      ? "🌿 ƯU ĐÃI"
-                                      : "🔥 FLASH"}
-                                  </span>
-                                  {(() => {
-                                    const o = parseInt(originalPrice.replace(/\D/g, ""), 10);
-                                    const s = parseInt(salePrice.replace(/\D/g, ""), 10);
-                                    return o && s && o > s ? (
-                                      <span className="px-1 py-0.2 rounded bg-amber-400 text-stone-950 text-[6.5px] font-black">
-                                        -{Math.round(((o - s) / o) * 100)}%
-                                      </span>
-                                    ) : (
-                                      <span className="px-1 py-0.2 rounded bg-amber-400 text-stone-950 text-[6.5px] font-black">
-                                        HOT
-                                      </span>
-                                    );
-                                  })()}
-                                </div>
-                                <div className="text-[11px] font-black leading-none mt-0.5">
-                                  {salePrice || originalPrice || "389.000₫"}
-                                </div>
-                                {originalPrice && salePrice && (
-                                  <div className="text-[7px] opacity-75 line-through leading-tight">
-                                    Gốc: {originalPrice}
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-
-                          {/* Nút cập nhật nhãn giá tức thì lên ảnh Hero hiện tại (nếu đã có ảnh) */}
-                          {currentSession?.currentResults?.style1 && (
-                            <button
-                              type="button"
-                              disabled={isUpdatingPriceBadge}
-                              onClick={handleUpdatePriceBadgeNow}
-                              className="w-full mt-1 py-2 px-3 rounded-xl bg-gradient-to-r from-rose-600 via-rose-500 to-amber-600 hover:from-rose-500 hover:to-amber-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-lg shadow-rose-600/25 active:scale-[0.99] transition-all border border-rose-400/40 disabled:opacity-50"
-                              title="Gán vị trí bảng giá mới trực tiếp lên ảnh Phong Cách 1 mà không cần chạy lại AI"
-                            >
-                              {isUpdatingPriceBadge ? (
-                                <>
-                                  <RefreshCw className="h-3.5 w-3.5 animate-spin text-white" />
-                                  <span>Đang gắn lại nhãn giá lên ảnh...</span>
-                                </>
-                              ) : (
-                                <>
-                                  <Sparkles className="h-3.5 w-3.5 text-amber-300" />
-                                  <span>⚡ Cập Nhật Vị Trí Này Lên Ảnh Ngay (50ms)</span>
-                                </>
-                              )}
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    )}
-                  </div>
                 </div>
               )}
             </div>
@@ -1609,18 +1489,21 @@ export default function StudioPage() {
                   </div>
                   <div>
                     <h2 className="text-xs font-bold text-white uppercase tracking-wider">
-                      3. Không Gian & Tỷ Lệ
+                      3. Không Gian, Tỷ Lệ & Chất Lượng
                     </h2>
                     <p className="text-[11px] text-slate-400">
                       {conceptMode === "sample_match"
                         ? `Ảnh Mẫu • ${sampleRef ? "Đã Khóa Phong Cách" : "Chưa Chọn Ảnh"}`
-                        : `${aspectRatio} • ${colorTone === "auto" ? "Tone Tự Động (AI)" : colorTone}`}
+                        : `${aspectRatio} • Chuẩn ${resolution} • ${colorTone === "auto" ? "Tone Tự Động (AI)" : colorTone}`}
                     </p>
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5">
                   <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-300 border border-indigo-500/20">
                     {aspectRatio}
+                  </span>
+                  <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+                    {resolution}
                   </span>
                   <ChevronDown
                     className={`h-4 w-4 text-slate-400 transition-transform duration-200 ${openSections.concept ? "rotate-180" : ""
@@ -1902,6 +1785,51 @@ export default function StudioPage() {
                       ))}
                     </div>
                   </div>
+
+                  {/* Chọn Chất Lượng & Độ Phân Giải Hình Ảnh (1K, 2K, 4K) */}
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="text-[11px] font-medium text-slate-300">
+                        Chất Lượng Hình Ảnh Tạo & Xuất (Resolution)
+                      </label>
+                      <span className="text-[10px] font-mono text-emerald-400 font-semibold">
+                        Chuẩn {resolution}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-3 gap-1.5">
+                      {IMAGE_RESOLUTIONS.map((resOpt) => {
+                        const isSelected = resolution === resOpt.id;
+                        return (
+                          <button
+                            key={resOpt.id}
+                            type="button"
+                            onClick={() => setResolution(resOpt.id)}
+                            className={`p-2 rounded-xl border text-left transition-all flex flex-col justify-between ${
+                              isSelected
+                                ? "border-emerald-500 bg-emerald-500/15 text-white ring-1 ring-emerald-500/30 shadow-md shadow-emerald-500/10"
+                                : "border-white/[0.08] bg-[#0c101c] text-slate-400 hover:text-white hover:border-white/[0.16]"
+                            }`}
+                          >
+                            <div className="flex items-center justify-between w-full mb-0.5">
+                              <span className="text-xs font-bold text-white">{resOpt.label}</span>
+                              <span
+                                className={`text-[8px] px-1.5 py-0.2 rounded font-semibold ${
+                                  isSelected
+                                    ? "bg-emerald-500 text-slate-950"
+                                    : "bg-white/[0.06] text-slate-400"
+                                }`}
+                              >
+                                {resOpt.badge}
+                              </span>
+                            </div>
+                            <span className="text-[9px] text-slate-400 truncate w-full">
+                              {resOpt.subLabel}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
                 </div>
               )}
             </div>
@@ -2129,19 +2057,48 @@ export default function StudioPage() {
                 {/* Ô nhập prompt chỉnh sửa ảnh (Style 1) */}
                 {editingStyle === "style1_hero" && (
                   <div className="mt-2.5 p-2.5 rounded-xl bg-[#090d16] border border-indigo-500/30 shadow-lg space-y-2 animate-in fade-in duration-200">
-                    <div className="flex items-center justify-between">
+                    <div className="flex items-center justify-between gap-1.5">
                       <div className="flex items-center gap-1.5 text-[11px] font-bold text-indigo-300">
                         <Pencil className="h-3 w-3 text-indigo-400" />
                         <span>Chỉnh Sửa Bằng Prompt (AI)</span>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => setEditingStyle(null)}
-                        className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
-                      >
-                        <X className="h-3.5 w-3.5" />
-                      </button>
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => handleOpenRegionEditor("style1_hero")}
+                          className="px-2 py-0.5 rounded-lg text-[10px] font-semibold bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-300 border border-cyan-500/30 transition-all flex items-center gap-1"
+                          title="Mở trình khoanh vùng trực tiếp trên ảnh như ChatGPT"
+                        >
+                          <span>🎯 Khoanh vùng trên ảnh</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setEditingStyle(null)}
+                          className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
                     </div>
+
+                    {(() => {
+                      const activeBox = computeRegionBoxFromStrokes(regionStrokesByStyle.style1_hero || []);
+                      if (!activeBox) return null;
+                      return (
+                        <div className="flex items-center justify-between px-2 py-1 rounded-lg bg-cyan-500/10 border border-cyan-500/25 text-[10px] text-cyan-300">
+                          <span className="truncate">
+                            🎯 Đã khoanh vùng: <strong>{activeBox.zoneLabel}</strong> ({activeBox.widthPercent}%×{activeBox.heightPercent}%)
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setRegionStrokesByStyle((prev) => ({ ...prev, style1_hero: [] }))}
+                            className="text-[9px] text-rose-300 hover:text-rose-200 underline ml-2 shrink-0"
+                          >
+                            Xóa vùng
+                          </button>
+                        </div>
+                      );
+                    })()}
 
                     <div className="relative">
                       <textarea
@@ -2375,19 +2332,48 @@ export default function StudioPage() {
                 {/* Ô nhập prompt chỉnh sửa ảnh (Style 2) */}
                 {editingStyle === "style2_grid2x2" && (
                   <div className="mt-2.5 p-2.5 rounded-xl bg-[#090d16] border border-sky-500/30 shadow-lg space-y-2 animate-in fade-in duration-200">
-                    <div className="flex items-center justify-between">
+                    <div className="flex items-center justify-between gap-1.5">
                       <div className="flex items-center gap-1.5 text-[11px] font-bold text-sky-300">
                         <Pencil className="h-3 w-3 text-sky-400" />
                         <span>Chỉnh Sửa Bằng Prompt (AI)</span>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => setEditingStyle(null)}
-                        className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
-                      >
-                        <X className="h-3.5 w-3.5" />
-                      </button>
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => handleOpenRegionEditor("style2_grid2x2")}
+                          className="px-2 py-0.5 rounded-lg text-[10px] font-semibold bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-300 border border-cyan-500/30 transition-all flex items-center gap-1"
+                          title="Mở trình khoanh vùng trực tiếp trên ảnh như ChatGPT"
+                        >
+                          <span>🎯 Khoanh vùng trên ảnh</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setEditingStyle(null)}
+                          className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
                     </div>
+
+                    {(() => {
+                      const activeBox = computeRegionBoxFromStrokes(regionStrokesByStyle.style2_grid2x2 || []);
+                      if (!activeBox) return null;
+                      return (
+                        <div className="flex items-center justify-between px-2 py-1 rounded-lg bg-cyan-500/10 border border-cyan-500/25 text-[10px] text-cyan-300">
+                          <span className="truncate">
+                            🎯 Đã khoanh vùng: <strong>{activeBox.zoneLabel}</strong> ({activeBox.widthPercent}%×{activeBox.heightPercent}%)
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setRegionStrokesByStyle((prev) => ({ ...prev, style2_grid2x2: [] }))}
+                            className="text-[9px] text-rose-300 hover:text-rose-200 underline ml-2 shrink-0"
+                          >
+                            Xóa vùng
+                          </button>
+                        </div>
+                      );
+                    })()}
 
                     <div className="relative">
                       <textarea
@@ -2625,19 +2611,48 @@ export default function StudioPage() {
                 {/* Ô nhập prompt chỉnh sửa ảnh (Style 3) */}
                 {editingStyle === "style3_callout" && (
                   <div className="mt-2.5 p-2.5 rounded-xl bg-[#090d16] border border-emerald-500/30 shadow-lg space-y-2 animate-in fade-in duration-200">
-                    <div className="flex items-center justify-between">
+                    <div className="flex items-center justify-between gap-1.5">
                       <div className="flex items-center gap-1.5 text-[11px] font-bold text-emerald-300">
                         <Pencil className="h-3 w-3 text-emerald-400" />
                         <span>Chỉnh Sửa Bằng Prompt (AI)</span>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => setEditingStyle(null)}
-                        className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
-                      >
-                        <X className="h-3.5 w-3.5" />
-                      </button>
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => handleOpenRegionEditor("style3_callout")}
+                          className="px-2 py-0.5 rounded-lg text-[10px] font-semibold bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-300 border border-cyan-500/30 transition-all flex items-center gap-1"
+                          title="Mở trình khoanh vùng trực tiếp trên ảnh như ChatGPT"
+                        >
+                          <span>🎯 Khoanh vùng trên ảnh</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setEditingStyle(null)}
+                          className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
                     </div>
+
+                    {(() => {
+                      const activeBox = computeRegionBoxFromStrokes(regionStrokesByStyle.style3_callout || []);
+                      if (!activeBox) return null;
+                      return (
+                        <div className="flex items-center justify-between px-2 py-1 rounded-lg bg-cyan-500/10 border border-cyan-500/25 text-[10px] text-cyan-300">
+                          <span className="truncate">
+                            🎯 Đã khoanh vùng: <strong>{activeBox.zoneLabel}</strong> ({activeBox.widthPercent}%×{activeBox.heightPercent}%)
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setRegionStrokesByStyle((prev) => ({ ...prev, style3_callout: [] }))}
+                            className="text-[9px] text-rose-300 hover:text-rose-200 underline ml-2 shrink-0"
+                          >
+                            Xóa vùng
+                          </button>
+                        </div>
+                      );
+                    })()}
 
                     <div className="relative">
                       <textarea
@@ -3636,7 +3651,7 @@ export default function StudioPage() {
                   })()}
                 </span>
                 <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 font-medium">
-                  Độ phân giải gốc
+                  Chất lượng: {currentSession?.resolution || resolution} ({currentSession?.aspectRatio || aspectRatio})
                 </span>
               </div>
               <div className="flex items-center gap-2">
@@ -3684,18 +3699,273 @@ export default function StudioPage() {
               </div>
             </div>
 
-            {/* Main Image View - completely clean, unobstructed */}
-            <div
-              className={`relative flex items-center justify-center p-3 sm:p-5 overflow-hidden transition-all duration-300 ${
-                lightboxEditActive ? "max-h-[46vh] sm:max-h-[52vh]" : "max-h-[82vh]"
-              }`}
-            >
-              <img
-                src={previewZoomImage}
-                alt="Zoom Preview"
-                className="max-h-[78vh] w-auto max-w-full object-contain select-none rounded-lg shadow-2xl"
-              />
-            </div>
+            {/* Main Image View + Interactive ChatGPT-style Brush / Box Region Inpainting Canvas */}
+            {(() => {
+              const matchingStyle: ShotStyle =
+                currentSession?.currentResults.style1?.imageUrl === previewZoomImage
+                  ? "style1_hero"
+                  : currentSession?.currentResults.style2?.imageUrl === previewZoomImage
+                    ? "style2_grid2x2"
+                    : "style3_callout";
+
+              const currentStrokes = regionStrokesByStyle[matchingStyle] || [];
+              const allStrokes = activeDrawingStroke ? [...currentStrokes, activeDrawingStroke] : currentStrokes;
+              const activeRegionBox = computeRegionBoxFromStrokes(allStrokes);
+
+              const getNormalizedPoint = (e: React.PointerEvent<SVGSVGElement>) => {
+                const rect = e.currentTarget.getBoundingClientRect();
+                const x = Math.max(0, Math.min(1, (e.clientX - rect.left) / Math.max(1, rect.width)));
+                const y = Math.max(0, Math.min(1, (e.clientY - rect.top) / Math.max(1, rect.height)));
+                return { x, y };
+              };
+
+              return (
+                <>
+                  {/* Thanh công cụ Khoanh Vùng Trực Tiếp (Hiển thị khi bật chế độ Sửa ảnh) */}
+                  {lightboxEditActive && currentSession && (
+                    <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2 bg-[#0d1424] border-b border-cyan-500/20 shrink-0 z-20">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span className="text-[11px] font-bold text-cyan-300 flex items-center gap-1 mr-1">
+                          <span>🎯 Công cụ khoanh vùng:</span>
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setSelectionTool("brush")}
+                          className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold border transition-all flex items-center gap-1 ${
+                            selectionTool === "brush"
+                              ? "bg-cyan-500/25 border-cyan-400 text-cyan-200 shadow-sm shadow-cyan-500/20"
+                              : "bg-white/[0.04] border-white/10 text-slate-300 hover:bg-white/[0.08]"
+                          }`}
+                        >
+                          <span>🖌️ Cọ Tô Vùng (Brush)</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setSelectionTool("box")}
+                          className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold border transition-all flex items-center gap-1 ${
+                            selectionTool === "box"
+                              ? "bg-cyan-500/25 border-cyan-400 text-cyan-200 shadow-sm shadow-cyan-500/20"
+                              : "bg-white/[0.04] border-white/10 text-slate-300 hover:bg-white/[0.08]"
+                          }`}
+                        >
+                          <span>⬚ Khoanh Khung (Box)</span>
+                        </button>
+
+                        {selectionTool === "brush" && (
+                          <div className="flex items-center gap-1 ml-1 pl-2 border-l border-white/10">
+                            <span className="text-[10px] text-slate-400">Cỡ cọ:</span>
+                            {[
+                              { label: "Nhỏ", size: 0.022 },
+                              { label: "Vừa", size: 0.036 },
+                              { label: "Lớn", size: 0.062 },
+                            ].map((b) => (
+                              <button
+                                key={b.label}
+                                type="button"
+                                onClick={() => setBrushRadiusNorm(b.size)}
+                                className={`px-2 py-0.5 rounded text-[10px] font-medium border transition-all ${
+                                  Math.abs(brushRadiusNorm - b.size) < 0.005
+                                    ? "bg-indigo-500/30 border-indigo-400 text-white"
+                                    : "bg-white/[0.03] border-white/10 text-slate-400 hover:text-slate-200"
+                                }`}
+                              >
+                                {b.label}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-1.5">
+                        {currentStrokes.length > 0 && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setRegionStrokesByStyle((prev) => ({
+                                  ...prev,
+                                  [matchingStyle]: (prev[matchingStyle] || []).slice(0, -1),
+                                }))
+                              }
+                              className="px-2 py-1 rounded-lg text-[10px] font-medium bg-white/[0.05] hover:bg-white/[0.1] text-slate-300 border border-white/10 transition-colors"
+                            >
+                              ↩️ Hoàn tác
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setRegionStrokesByStyle((prev) => ({
+                                  ...prev,
+                                  [matchingStyle]: [],
+                                }))
+                              }
+                              className="px-2 py-1 rounded-lg text-[10px] font-medium bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 border border-rose-500/30 transition-colors"
+                            >
+                              🗑️ Xóa vùng chọn
+                            </button>
+                          </>
+                        )}
+                        <span
+                          className={`text-[10px] px-2.5 py-1 rounded-lg border font-medium ${
+                            activeRegionBox
+                              ? "bg-cyan-500/15 border-cyan-400/40 text-cyan-200"
+                              : "bg-white/[0.03] border-white/10 text-slate-400"
+                          }`}
+                        >
+                          {activeRegionBox
+                            ? `🎯 Vùng sửa: ${activeRegionBox.zoneLabel} (${activeRegionBox.widthPercent}%×${activeRegionBox.heightPercent}%)`
+                            : "🌐 Đang chọn: Toàn bộ ảnh (Tô/khoanh trực tiếp lên ảnh để chỉ sửa 1 vùng)"}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+
+                  <div
+                    className={`relative flex items-center justify-center p-3 sm:p-4 overflow-hidden transition-all duration-300 ${
+                      lightboxEditActive ? "max-h-[44vh] sm:max-h-[48vh]" : "max-h-[82vh]"
+                    }`}
+                  >
+                    <div className="relative inline-flex items-center justify-center max-h-full max-w-full">
+                      <img
+                        src={previewZoomImage}
+                        alt="Zoom Preview"
+                        draggable={false}
+                        className={`w-auto max-w-full object-contain select-none rounded-lg shadow-2xl ${
+                          lightboxEditActive ? "max-h-[41vh] sm:max-h-[45vh]" : "max-h-[78vh]"
+                        }`}
+                      />
+
+                      {/* Lớp phủ SVG tương tác trực tiếp trên ảnh để khoanh vùng (Brush & Box) */}
+                      {lightboxEditActive && currentSession && (
+                        <svg
+                          viewBox="0 0 1000 1000"
+                          preserveAspectRatio="none"
+                          onPointerDown={(e) => {
+                            e.stopPropagation();
+                            e.currentTarget.setPointerCapture(e.pointerId);
+                            const pt = getNormalizedPoint(e);
+                            if (selectionTool === "box") {
+                              setActiveDrawingStroke({
+                                type: "box",
+                                x1: pt.x,
+                                y1: pt.y,
+                                x2: pt.x,
+                                y2: pt.y,
+                              });
+                            } else {
+                              setActiveDrawingStroke({
+                                type: "brush",
+                                points: [pt],
+                                radiusNorm: brushRadiusNorm,
+                              });
+                            }
+                          }}
+                          onPointerMove={(e) => {
+                            if (!activeDrawingStroke) return;
+                            e.stopPropagation();
+                            const pt = getNormalizedPoint(e);
+                            setActiveDrawingStroke((prev) => {
+                              if (!prev) return null;
+                              if (prev.type === "box") {
+                                return {
+                                  ...prev,
+                                  x2: pt.x,
+                                  y2: pt.y,
+                                };
+                              }
+                              return {
+                                ...prev,
+                                points: [...prev.points, pt],
+                              };
+                            });
+                          }}
+                          onPointerUp={(e) => {
+                            if (!activeDrawingStroke) return;
+                            e.stopPropagation();
+                            setRegionStrokesByStyle((prev) => ({
+                              ...prev,
+                              [matchingStyle]: [...(prev[matchingStyle] || []), activeDrawingStroke],
+                            }));
+                            setActiveDrawingStroke(null);
+                          }}
+                          className="absolute inset-0 w-full h-full cursor-crosshair touch-none select-none z-10 rounded-lg"
+                        >
+                          {/* Render tất cả các nét cọ / khung chữ nhật */}
+                          {allStrokes.map((stroke, idx) => {
+                            if (stroke.type === "box") {
+                              const x = Math.min(stroke.x1, stroke.x2) * 1000;
+                              const y = Math.min(stroke.y1, stroke.y2) * 1000;
+                              const w = Math.max(8, Math.abs(stroke.x2 - stroke.x1) * 1000);
+                              const h = Math.max(8, Math.abs(stroke.y2 - stroke.y1) * 1000);
+                              return (
+                                <rect
+                                  key={idx}
+                                  x={x}
+                                  y={y}
+                                  width={w}
+                                  height={h}
+                                  rx={12}
+                                  fill="rgba(0, 229, 255, 0.34)"
+                                  stroke="#00E5FF"
+                                  strokeWidth={4}
+                                  strokeDasharray="10 6"
+                                />
+                              );
+                            }
+
+                            const pts = stroke.points;
+                            if (!pts.length) return null;
+                            const strokeWidth = Math.max(16, (stroke.radiusNorm || 0.036) * 2000);
+                            if (pts.length === 1) {
+                              return (
+                                <circle
+                                  key={idx}
+                                  cx={pts[0].x * 1000}
+                                  cy={pts[0].y * 1000}
+                                  r={strokeWidth / 2}
+                                  fill="rgba(0, 229, 255, 0.38)"
+                                />
+                              );
+                            }
+                            const d = pts
+                              .map((p: { x: number; y: number }, i: number) => `${i === 0 ? "M" : "L"} ${(p.x * 1000).toFixed(1)} ${(p.y * 1000).toFixed(1)}`)
+                              .join(" ");
+                            return (
+                              <path
+                                key={idx}
+                                d={d}
+                                fill="none"
+                                stroke="rgba(0, 229, 255, 0.42)"
+                                strokeWidth={strokeWidth}
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                              />
+                            );
+                          })}
+
+                          {/* Khung viền tổng hợp báo hiệu vùng AI Focus */}
+                          {activeRegionBox && (
+                            <g>
+                              <rect
+                                x={activeRegionBox.xPercent * 10}
+                                y={activeRegionBox.yPercent * 10}
+                                width={activeRegionBox.widthPercent * 10}
+                                height={activeRegionBox.heightPercent * 10}
+                                rx={10}
+                                fill="none"
+                                stroke="#00E5FF"
+                                strokeWidth={3}
+                                strokeDasharray="12 8"
+                              />
+                            </g>
+                          )}
+                        </svg>
+                      )}
+                    </div>
+                  </div>
+                </>
+              );
+            })()}
 
             {/* Embedded AI Studio Editor Drawer */}
             {lightboxEditActive && currentSession && (() => {
@@ -3749,7 +4019,7 @@ export default function StudioPage() {
                           handleApplyEdit(matchingStyle);
                         }
                       }}
-                      placeholder="Nhập mô tả bối cảnh muốn biến đổi... (VD: Đổi sang bãi biển mùa hè với ánh nắng vàng và cát trắng, thêm giọt nước trên thân máy, bục đá cẩm thạch trắng...)"
+                      placeholder="Tô/khoanh vùng trên ảnh ở trên rồi nhập yêu cầu sửa cho đúng vùng đó... (VD: Chèn bảng giá 299.000đ giảm 40% vào vùng đã khoanh, hoặc đổi mặt bàn sang đá marble, thêm giọt nước...)"
                       rows={2}
                       className="w-full px-3 py-2 text-xs rounded-xl bg-[#080b14] border border-white/12 text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 resize-none transition-all shadow-inner"
                       autoFocus

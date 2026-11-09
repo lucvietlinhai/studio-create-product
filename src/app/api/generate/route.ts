@@ -20,6 +20,7 @@ import {
   ProductDetails,
   ConceptMode,
   AspectRatio,
+  ImageResolution,
   AIProvider,
   PackagingOption,
   ColorTone,
@@ -60,6 +61,7 @@ export async function POST(req: NextRequest) {
       colorTone = "auto",
       lockSameBackground = true,
       aspectRatio = "1:1",
+      resolution = "1K",
       provider = "sangtao",
       useHybridOverlay = true,
       originalPhotos = [],
@@ -75,6 +77,7 @@ export async function POST(req: NextRequest) {
       colorTone?: ColorTone;
       lockSameBackground?: boolean;
       aspectRatio: AspectRatio;
+      resolution?: ImageResolution;
       provider: AIProvider;
       useHybridOverlay: boolean;
       originalPhotos: string[];
@@ -86,7 +89,7 @@ export async function POST(req: NextRequest) {
       "info",
       "System",
       "Khởi tạo Multi-Modal Commercial Visual Pipeline",
-      `Chế độ: ${generateMode === "hero_only" ? "Tạo Ảnh Hero Trước (Phong Cách 1)" : "Bộ 3 Ảnh Đầy Đủ"} | Sản phẩm: "${productDetails.title || "Tự động nhận diện"}" | Bao bì: ${packagingOption} | Tone màu: ${colorTone} | Tỷ lệ: ${aspectRatio} | Provider: ${provider}`
+      `Chế độ: ${generateMode === "hero_only" ? "Tạo Ảnh Hero Trước (Phong Cách 1)" : "Bộ 3 Ảnh Đầy Đủ"} | Sản phẩm: "${productDetails.title || "Tự động nhận diện"}" | Bao bì: ${packagingOption} | Tone màu: ${colorTone} | Tỷ lệ: ${aspectRatio} | Chất lượng: ${resolution} | Provider: ${provider}`
     );
 
     if (originalPhotos.length === 0) {
@@ -223,6 +226,7 @@ export async function POST(req: NextRequest) {
       prompt: style1Prompts.prompt,
       negativePrompt: style1Prompts.negativePrompt,
       aspectRatio,
+      resolution,
       provider,
       originalPhotos: photoBuffers,
       backgroundRef: bgBuffer,
@@ -248,16 +252,16 @@ export async function POST(req: NextRequest) {
       localPath: s1Path,
       cleanLocalPath: s1CleanPath,
       aspectRatio,
+      resolution,
       promptUsed: style1Prompts.prompt,
       provider,
       createdAt,
-      hasOverlayBadge: finalProductDetails.showPriceBadge,
     };
     addLog(
       "success",
       "Compositor",
       "Hoàn tất Kiểu 1 (Hero Design)",
-      `Đã lưu ${s1FileName} (${(s1Res.buffer.length / 1024).toFixed(1)} KB)`
+      `Đã lưu ${s1FileName} [Chuẩn ${resolution}] (${(s1Res.buffer.length / 1024).toFixed(1)} KB)`
     );
 
     // If generateMode === "hero_only" (default workflow), complete Step 1 here
@@ -274,6 +278,7 @@ export async function POST(req: NextRequest) {
         colorTone,
         lockSameBackground,
         aspectRatio,
+        resolution,
         provider,
         useHybridOverlay,
         generationWarning: s1Res.warning,
@@ -327,6 +332,7 @@ export async function POST(req: NextRequest) {
       prompt: style2Prompts.prompt,
       negativePrompt: style2Prompts.negativePrompt,
       aspectRatio,
+      resolution,
       provider,
       originalPhotos: photoBuffers,
       backgroundRef: bgBuffer,
@@ -352,6 +358,7 @@ export async function POST(req: NextRequest) {
       localPath: s2Path,
       cleanLocalPath: s2CleanPath,
       aspectRatio,
+      resolution,
       promptUsed: style2Prompts.prompt,
       provider,
       createdAt,
@@ -382,6 +389,7 @@ export async function POST(req: NextRequest) {
       prompt: style3Prompts.prompt,
       negativePrompt: style3Prompts.negativePrompt,
       aspectRatio,
+      resolution,
       provider,
       originalPhotos: photoBuffers,
       backgroundRef: bgBuffer,
@@ -407,6 +415,7 @@ export async function POST(req: NextRequest) {
       localPath: s3Path,
       cleanLocalPath: s3CleanPath,
       aspectRatio,
+      resolution,
       promptUsed: style3Prompts.prompt,
       provider,
       createdAt,
@@ -435,6 +444,7 @@ export async function POST(req: NextRequest) {
       colorTone,
       lockSameBackground,
       aspectRatio,
+      resolution,
       provider,
       useHybridOverlay,
       generationWarning: detectedWarning,

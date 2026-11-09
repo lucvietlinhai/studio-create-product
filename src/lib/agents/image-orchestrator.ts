@@ -1,11 +1,19 @@
 import sharp from "sharp";
 import crypto from "crypto";
-import { AspectRatio, AIProvider, ShotStyle, ProductDetails, ProcessLogEntry, SANGTAO_IMAGE_MODEL } from "@/types/studio";
+import {
+  AspectRatio,
+  ImageResolution,
+  EditRegionBox,
+  AIProvider,
+  ShotStyle,
+  ProductDetails,
+  ProcessLogEntry,
+  SANGTAO_IMAGE_MODEL,
+} from "@/types/studio";
 import {
   getDimensionsForRatio,
   create2x2GridImage,
   overlayCalloutOnImage,
-  overlayPriceBadgeOnImage,
 } from "@/lib/compositor/image-processor";
 import { loadSettings } from "@/lib/config/settings-manager";
 import { detectProductBoxAndCrop } from "@/lib/agents/analyzer-agent";
@@ -15,12 +23,15 @@ export interface GenerateImageOptions {
   prompt: string;
   negativePrompt: string;
   aspectRatio: AspectRatio;
+  resolution?: ImageResolution;
   provider: AIProvider;
   originalPhotos: Buffer[]; // 1-3 Product Reference Images
   backgroundRef?: Buffer;
   sampleRef?: Buffer; // Concept Reference Image (0-1)
   currentImageRef?: Buffer; // Existing rendered image being edited
+  annotatedGuideRef?: Buffer; // Image with user's selected region highlighted (for region inpainting)
   editPrompt?: string; // Specific user modification prompt
+  editRegion?: EditRegionBox; // Normalized bounding box & zone label of the selected region
   productDetails: ProductDetails;
   useHybridOverlay: boolean;
   onLog?: (entry: ProcessLogEntry) => void;
@@ -396,9 +407,13 @@ async function generateWithSangtaoPipeline(
   const conceptRef = options.sampleRef || options.backgroundRef;
   const rawRefs: Buffer[] = [];
   if (options.currentImageRef) {
-    // In edit mode: The current studio render MUST be Reference 1 (Base canvas to modify)
+    // In edit mode: The current studio render MUST be Reference 1 (Clean Base canvas to modify)
     rawRefs.push(options.currentImageRef);
-    // Reference 2 is the authentic original product photo for identity preservation
+    // If user painted/selected a specific target region, pass the annotated region map as Reference 2
+    if (options.annotatedGuideRef) {
+      rawRefs.push(options.annotatedGuideRef);
+    }
+    // Authentic original product photo for identity preservation
     if (options.originalPhotos.length > 0) {
       rawRefs.push(options.originalPhotos[0]);
     }
@@ -411,11 +426,14 @@ async function generateWithSangtaoPipeline(
   }
 
   if (options.editPrompt) {
+    const regionInfo = options.editRegion
+      ? ` | Vùng khoanh: ${options.editRegion.zoneLabel} (X: ${Math.round(options.editRegion.xPercent)}%–${Math.min(100, Math.round(options.editRegion.xPercent + options.editRegion.widthPercent))}%, Y: ${Math.round(options.editRegion.yPercent)}%–${Math.min(100, Math.round(options.editRegion.yPercent + options.editRegion.heightPercent))}%)`
+      : " | Phạm vi: Toàn ảnh";
     emitLog?.(
       "info",
       "SangtaoAI",
-      "Kích hoạt chế độ Sửa ảnh (Prompt Edit)",
-      `Áp dụng yêu cầu sửa: "${options.editPrompt}"`
+      "Kích hoạt chế độ Sửa ảnh (Prompt & Region Inpainting)",
+      `Áp dụng yêu cầu sửa: "${options.editPrompt}"${regionInfo}`
     );
   }
 
@@ -448,7 +466,25 @@ async function generateWithSangtaoPipeline(
   const generateUrl = "https://sangtao.ai/api/v2/images/generate";
   let promptToSend = options.prompt;
   if (options.editPrompt && options.currentImageRef) {
-    if (refImageUrls.length >= 2) {
+    if (options.editRegion && options.annotatedGuideRef && refImageUrls.length >= 2) {
+      const x1 = Math.round(options.editRegion.xPercent);
+      const y1 = Math.round(options.editRegion.yPercent);
+      const x2 = Math.min(100, Math.round(options.editRegion.xPercent + options.editRegion.widthPercent));
+      const y2 = Math.min(100, Math.round(options.editRegion.yPercent + options.editRegion.heightPercent));
+      promptToSend = `[PRECISION REGION INPAINTING SESSION - CHATGPT SELECTION MODE]:
+- Reference Image 1 (CLEAN BASE PHOTO): The original unannotated studio photoshoot image.
+- Reference Image 2 (TARGET SELECTION MAP): Displays a translucent CYAN HIGHLIGHT MASK at ${options.editRegion.zoneLabel} (X: ${x1}%..${x2}%, Y: ${y1}%..${y2}%) indicating the EXACT region the user selected to modify.
+${refImageUrls.length >= 3 ? "- Reference Image 3 (AUTHENTIC PRODUCT IDENTITY): The physical product for 100% logo and form fidelity.\n" : ""}
+USER'S EXPLICIT REGION EDIT DIRECTIVE (APPLY STRICTLY INSIDE THE SELECTED CYAN ZONE AT X: ${x1}%..${x2}%, Y: ${y1}%..${y2}%):
+>>> "${options.editPrompt.trim()}" <<<
+
+CRITICAL INPAINTING RULES:
+1. Apply the requested modification ONLY inside the area marked by the cyan highlight in Reference Image 2 (${options.editRegion.zoneLabel}).
+2. Keep all areas outside the selected region 100% identical to Reference Image 1.
+3. DO NOT draw or include the cyan highlight mask or dashed border in the final output image—replace that marked zone seamlessly with the requested visual content!
+
+${options.prompt}`;
+    } else if (refImageUrls.length >= 2) {
       promptToSend = `[IMAGE-TO-IMAGE EDITING SESSION - MAXIMUM PROMPT FIDELITY]:
 - Reference Image 1 (PRIMARY BASE CANVAS): The current photoshoot image that you MUST transform and modify.
 - Reference Image 2 (AUTHENTIC PRODUCT REFERENCE): The authentic physical product. Ensure 100% exact fidelity of the product's brand logo, label text, form factor, and materials.
@@ -483,6 +519,8 @@ ${options.prompt}`;
     }
   }
 
+  const targetResolution: ImageResolution = options.resolution || "1K";
+
   const requestBody: Record<string, any> = {
     model: modelName,
     prompt: promptToSend,
@@ -491,7 +529,7 @@ ${options.prompt}`;
     options: {
       aspectRatio: options.aspectRatio,
       outputFormat: "png",
-      resolution: "1K",
+      resolution: targetResolution,
     },
   };
 
@@ -508,7 +546,7 @@ ${options.prompt}`;
       "info",
       "SangtaoAI",
       "Gửi yêu cầu POST /api/v2/agents/jobs/create (GPT Image 2)",
-      `Model: ${modelName} | Tỷ lệ: ${options.aspectRatio} | Tham chiếu: ${refImageUrls.length} ảnh`
+      `Model: ${modelName} | Tỷ lệ: ${options.aspectRatio} | Chất lượng: ${targetResolution} | Tham chiếu: ${refImageUrls.length} ảnh`
     );
     createRes = await fetch("https://sangtao.ai/api/v2/agents/jobs/create", {
       method: "POST",
@@ -521,7 +559,7 @@ ${options.prompt}`;
         prompt: promptToSend,
         aspectRatio: options.aspectRatio,
         format: "png",
-        resolution: "1K",
+        resolution: targetResolution,
         referenceImages: refImageUrls.length > 0 ? refImageUrls : undefined,
         idempotencyKey: crypto.randomUUID(),
       }),
@@ -532,7 +570,7 @@ ${options.prompt}`;
       "info",
       "SangtaoAI",
       "Gửi yêu cầu POST /api/v2/images/generate",
-      `Model: ${modelName} | Tỷ lệ: ${options.aspectRatio}`
+      `Model: ${modelName} | Tỷ lệ: ${options.aspectRatio} | Chất lượng: ${targetResolution}`
     );
     createRes = await fetch(generateUrl, {
       method: "POST",
@@ -873,7 +911,7 @@ async function generateWithGeminiMultiModal(
 
   if (options.currentImageRef && options.editPrompt) {
     parts.push({
-      text: `Current Commercial Shot (Image to Edit): Modify this base shot according to the user's specific edit command: "${options.editPrompt.trim()}". Preserve authentic product design from Image 0.`,
+      text: `Current Commercial Shot (Clean Base Photo to Edit): Modify this base shot according to the user's specific edit command: "${options.editPrompt.trim()}". Preserve authentic product design from Image 0.`,
     });
     const resizedCurrent = await sharp(options.currentImageRef)
       .resize(1024, 1024, { fit: "inside", withoutEnlargement: true })
@@ -885,6 +923,21 @@ async function generateWithGeminiMultiModal(
         data: resizedCurrent.toString("base64"),
       },
     });
+    if (options.annotatedGuideRef && options.editRegion) {
+      parts.push({
+        text: `Target Region Selection Map: The cyan highlighted area at ${options.editRegion.zoneLabel} marks the EXACT region where you must apply "${options.editPrompt.trim()}". Keep areas outside the cyan highlight unchanged, and do NOT render the cyan highlight itself in the final output.`,
+      });
+      const resizedGuide = await sharp(options.annotatedGuideRef)
+        .resize(1024, 1024, { fit: "inside", withoutEnlargement: true })
+        .jpeg({ quality: 90 })
+        .toBuffer();
+      parts.push({
+        inlineData: {
+          mimeType: "image/jpeg",
+          data: resizedGuide.toString("base64"),
+        },
+      });
+    }
   } else {
     const conceptRef = options.sampleRef || options.backgroundRef;
     if (conceptRef) {
@@ -995,21 +1048,39 @@ async function generateWithOpenAIPipeline(
 }
 
 /**
- * Ensures exact output resolution for the chosen AspectRatio and applies:
- * - Price Badge (if enabled on Style 1 Hero)
- * - Sleek Commercial Infographic Callout Lines & Typography (on Style 3 Callout)
+ * Ensures exact output resolution (1K, 2K, or 4K) for the chosen AspectRatio and applies:
+ * - Lanczos3 high-precision resampling & adaptive micro-contrast sharpening for 2K / 4K
+ * - Sleek Commercial Infographic Callout Lines & Typography (on Style 3 Callout) rendered natively at 1K/2K/4K
  */
 async function finalizeCommercialPostProcessing(
   rawBuffer: Buffer,
   options: GenerateImageOptions,
   emitLog?: LogEmitter
 ): Promise<{ buffer: Buffer; cleanBuffer: Buffer }> {
-  const { width, height } = getDimensionsForRatio(options.aspectRatio);
+  const targetRes: ImageResolution = options.resolution || "1K";
+  const { width, height } = getDimensionsForRatio(options.aspectRatio, targetRes);
 
-  const cleanBuffer = await sharp(rawBuffer)
-    .resize(width, height, { fit: "cover", position: "centre" })
-    .png()
-    .toBuffer();
+  let sharpPipeline = sharp(rawBuffer).resize(width, height, {
+    fit: "cover",
+    position: "centre",
+    kernel: sharp.kernel.lanczos3,
+  });
+
+  if (targetRes === "2K" || targetRes === "4K") {
+    emitLog?.(
+      "info",
+      "Compositor",
+      `Nâng cấp độ phân giải chuẩn ${targetRes} (${width}x${height}px)`,
+      `Đang xử lý nội suy Lanczos3 & tăng cường chi tiết bề mặt ở chuẩn ${targetRes}...`
+    );
+    sharpPipeline = sharpPipeline.sharpen({
+      sigma: targetRes === "4K" ? 1.15 : 0.85,
+      m1: 0.8,
+      m2: 1.5,
+    });
+  }
+
+  const cleanBuffer = await sharpPipeline.png({ compressionLevel: 6 }).toBuffer();
 
   let processedBuffer = cleanBuffer;
 
@@ -1017,22 +1088,10 @@ async function finalizeCommercialPostProcessing(
     emitLog?.(
       "info",
       "Compositor",
-      "Vẽ Infographic Line Callout & Thông số kỹ thuật",
-      "Đang kết xuất đường chỉ dẫn L-line, tiêu đề thương mại và cam kết chính sách..."
+      `Vẽ Vector Infographic Callout chuẩn ${targetRes} (${width}x${height}px)`,
+      "Đang kết xuất đường chỉ dẫn mảnh hiện đại, tiêu đề thương mại và cam kết chính sách..."
     );
     processedBuffer = await applyCalloutOverlay(cleanBuffer, options);
-  } else if (options.style === "style1_hero" && options.productDetails.showPriceBadge) {
-    const pos = options.productDetails.priceBadgePosition || "top-right";
-    emitLog?.(
-      "info",
-      "Compositor",
-      "Hiển thị giá sản phẩm",
-      `Đang gắn nhãn giá niêm yết & ưu đãi lên ảnh tại vị trí: ${pos}...`
-    );
-    processedBuffer = await overlayPriceBadgeOnImage(
-      cleanBuffer,
-      options.productDetails
-    );
   }
 
   return { buffer: processedBuffer, cleanBuffer };
