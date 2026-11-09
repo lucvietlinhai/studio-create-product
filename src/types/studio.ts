@@ -4,19 +4,25 @@ export type ImageResolution = "1K" | "2K";
 
 export type ConceptMode = "preset" | "background_ref" | "prompt" | "sample_match";
 
-export type AIProvider = "sangtao" | "gemini" | "openai";
+export type AIProvider = "sangtao" | "jtht" | "gemini" | "openai";
 
 /** Sangtao.ai chỉ cung cấp duy nhất model GPT Image cho tạo ảnh */
 export const SANGTAO_IMAGE_MODEL = "chatgpt-image-sangtao";
 
+/** Default model & endpoint cho JTHT AI */
+export const JTHT_DEFAULT_MODEL = "gpt-image-2";
+export const JTHT_DEFAULT_BASE_URL = "https://ai.jtht.vn/v1";
+
 /**
  * Danh sách chất lượng hình ảnh hỗ trợ theo từng nhà cung cấp / model:
- * - Sangtao.ai (chatgpt-image-sangtao): Hỗ trợ "1K" và "2K" (không hỗ trợ 4K)
+ * - Sangtao.ai (chatgpt-image-sangtao): Hỗ trợ "1K" và "2K"
+ * - JTHT AI (gpt-image-2 qua ai.jtht.vn): Hỗ trợ "1K" và "2K"
  * - Google Gemini (gemini-2.5-flash-image): Hỗ trợ "1K" mặc định
  * - OpenAI (gpt-image-1 / dall-e-3): Hỗ trợ "1K" mặc định
  */
 export const DEFAULT_PROVIDER_RESOLUTIONS: Record<AIProvider, ImageResolution[]> = {
   sangtao: ["1K", "2K"],
+  jtht: ["1K", "2K"],
   gemini: ["1K"],
   openai: ["1K"],
 };
@@ -90,6 +96,7 @@ export interface ProcessLogEntry {
     | "AnalyzerAgent"
     | "DirectorAgent"
     | "SangtaoAI"
+    | "JTHT_AI"
     | "Orchestrator"
     | "Compositor"
     | "CriticAgent"
@@ -153,6 +160,9 @@ export interface ProductSession {
 export interface StudioSettings {
   defaultProvider: AIProvider;
   sangtaoApiKey: string;
+  jthtApiKey: string;
+  jthtModel: string;
+  jthtBaseUrl: string;
   geminiApiKey: string;
   geminiModel: string;
   openaiApiKey: string;

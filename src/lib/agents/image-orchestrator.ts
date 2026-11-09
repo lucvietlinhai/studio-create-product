@@ -93,9 +93,11 @@ export async function orchestrateImageGeneration(
   };
 
   const sangtaoApiKey = settings.sangtaoApiKey || process.env.SANGTAO_API_KEY || "";
+  const jthtApiKey = settings.jthtApiKey || process.env.JTHT_API_KEY || "";
   const cfAccountId = (settings as any).cloudflareAccountId || process.env.CF_ACCOUNT_ID || "";
   const cfApiToken = (settings as any).cloudflareApiToken || process.env.CF_API_TOKEN || "";
   const isSangtaoConfigured = Boolean(sangtaoApiKey);
+  const isJthtConfigured = Boolean(jthtApiKey);
   const isCloudflareConfigured = Boolean(cfAccountId && cfApiToken);
   const isGeminiConfigured = Boolean(settings.geminiApiKey || process.env.GEMINI_API_KEY);
   const isOpenAIConfigured = Boolean(settings.openaiApiKey || process.env.OPENAI_API_KEY);
@@ -163,6 +165,49 @@ export async function orchestrateImageGeneration(
           };
         } catch { }
       }
+    }
+  }
+
+  // 2. JTHT AI REST API (https://ai.jtht.vn/v1/images/generations - Model: gpt-image-2)
+  if (effectiveProvider === "jtht" && isJthtConfigured && !settings.enableMockMode) {
+    try {
+      const jthtModel = settings.jthtModel || "gpt-image-2";
+      const jthtBaseUrl = settings.jthtBaseUrl || "https://ai.jtht.vn/v1";
+      emitLog(
+        "info",
+        "JTHT_AI",
+        `Khởi chạy JTHT AI Image Generation (${style})`,
+        `Model: ${jthtModel} | Endpoint: ${jthtBaseUrl}/images/generations | Tỷ lệ: ${aspectRatio}`
+      );
+      const jthtRes = await generateWithJthtPipeline(
+        options,
+        jthtApiKey,
+        jthtModel,
+        jthtBaseUrl,
+        isCloudflareConfigured ? { accountId: cfAccountId, apiToken: cfApiToken } : undefined,
+        emitLog
+      );
+      emitLog(
+        "success",
+        "JTHT_AI",
+        `Hoàn tất Render ${style} trên JTHT AI`,
+        `Đã nhận kết quả thành công từ JTHT AI (${(jthtRes.buffer.length / 1024).toFixed(1)} KB)`
+      );
+      return {
+        buffer: jthtRes.buffer,
+        cleanBuffer: jthtRes.cleanBuffer,
+        usedProvider: `jtht (${jthtModel})`,
+      };
+    } catch (err: any) {
+      console.warn("JTHT AI API call failed:", err);
+      warning = `Lỗi từ JTHT AI API: ${err.message?.slice(0, 160)}. Hệ thống đã chuyển sang Engine dự phòng.`;
+      emitLog(
+        "error",
+        "JTHT_AI",
+        "JTHT AI gặp sự cố",
+        err.message || "Lỗi gọi API JTHT AI",
+        err.stack || JSON.stringify(err)
+      );
     }
   }
 
@@ -1048,6 +1093,121 @@ async function generateWithOpenAIPipeline(
 }
 
 /**
+ * JTHT AI Image Generation Pipeline (https://ai.jtht.vn/v1/images/generations)
+ * Model default: "gpt-image-2"
+ */
+async function generateWithJthtPipeline(
+  options: GenerateImageOptions,
+  apiKey: string,
+  modelName: string = "gpt-image-2",
+  baseUrl: string = "https://ai.jtht.vn/v1",
+  cfBridge?: { accountId: string; apiToken: string },
+  emitLog?: LogEmitter
+): Promise<{ buffer: Buffer; cleanBuffer: Buffer }> {
+  const endpoint = `${baseUrl.replace(/\/+$/, "")}/images/generations`;
+
+  let promptToSend = options.prompt;
+  if (options.editPrompt && options.currentImageRef) {
+    promptToSend = `[IMAGE EDITING DIRECTIVE - MAXIMUM PROMPT FIDELITY]:
+User Edit Request: "${options.editPrompt.trim()}"
+${options.prompt}`;
+  }
+
+  // Size mapping according to aspect ratio
+  let size = "1024x1024";
+  if (options.aspectRatio === "16:9") {
+    size = "1792x1024";
+  } else if (options.aspectRatio === "9:16") {
+    size = "1024x1792";
+  }
+
+  emitLog?.(
+    "info",
+    "JTHT_AI",
+    "Gửi yêu cầu tới ai.jtht.vn",
+    `POST ${endpoint} | Model: ${modelName} | Size: ${size}`
+  );
+
+  const requestBody: Record<string, any> = {
+    model: modelName,
+    prompt: promptToSend,
+    size,
+  };
+
+  const response = await fetch(endpoint, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify(requestBody),
+  });
+
+  if (!response.ok) {
+    const errText = await response.text();
+    let errJson: any;
+    try {
+      errJson = JSON.parse(errText);
+    } catch { }
+    const errMsg =
+      errJson?.message ||
+      errJson?.error?.message ||
+      errJson?.code ||
+      errText.slice(0, 220);
+    throw new Error(`JTHT AI Error (${response.status}): ${errMsg}`);
+  }
+
+  const data = await response.json().catch(() => ({}));
+  const item = data.data?.[0];
+  if (!item) {
+    throw new Error(data.message || data.error?.message || "Không nhận được dữ liệu ảnh từ JTHT AI");
+  }
+
+  let rawBuffer: Buffer;
+  if (item.b64_json) {
+    rawBuffer = Buffer.from(item.b64_json, "base64");
+  } else if (item.url) {
+    emitLog?.("info", "JTHT_AI", "Tải ảnh từ CDN JTHT AI", `URL: ${item.url.slice(0, 60)}...`);
+    const imgRes = await fetch(item.url);
+    if (!imgRes.ok) {
+      throw new Error(`Không thể tải ảnh từ URL kết quả JTHT AI (${imgRes.status})`);
+    }
+    rawBuffer = Buffer.from(await imgRes.arrayBuffer());
+  } else if (typeof item.image === "string") {
+    if (item.image.startsWith("http")) {
+      const imgRes = await fetch(item.image);
+      rawBuffer = Buffer.from(await imgRes.arrayBuffer());
+    } else {
+      rawBuffer = Buffer.from(item.image.replace(/^data:image\/\w+;base64,/, ""), "base64");
+    }
+  } else {
+    throw new Error("Dữ liệu ảnh trả về từ JTHT AI không hợp lệ.");
+  }
+
+  if (options.originalPhotos.length > 0 && cfBridge) {
+    emitLog?.(
+      "info",
+      "Orchestrator",
+      "Đồng bộ sản phẩm thật vào cảnh JTHT AI",
+      "Đang tách nền 3D sản phẩm gốc và ghép vào bối cảnh JTHT AI..."
+    );
+    rawBuffer = await callCloudflareFlux2MultiModal({
+      accountId: cfBridge.accountId,
+      apiToken: cfBridge.apiToken,
+      model: "@cf/black-forest-labs/flux-2-klein-9b",
+      prompt: options.prompt,
+      aspectRatio: options.aspectRatio,
+      referenceImages: [...options.originalPhotos.slice(0, 3), rawBuffer],
+      emitLog,
+    });
+  } else if (options.originalPhotos.length > 0) {
+    rawBuffer = await compositeAlphaProductOntoScene(rawBuffer, options.originalPhotos[0]);
+  }
+
+  return await finalizeCommercialPostProcessing(rawBuffer, options, emitLog);
+}
+
+/**
  * Ensures exact output resolution (1K or 2K, depending on model support) for the chosen AspectRatio and applies:
  * - Lanczos3 high-precision resampling & adaptive micro-contrast sharpening for 2K
  * - Sleek Commercial Infographic Callout Lines & Typography (on Style 3 Callout) rendered natively at 1K/2K
@@ -1059,7 +1219,9 @@ async function finalizeCommercialPostProcessing(
 ): Promise<{ buffer: Buffer; cleanBuffer: Buffer }> {
   const effectiveProvider = options.provider || "sangtao";
   const targetRes: ImageResolution =
-    effectiveProvider === "sangtao" && options.resolution === "2K" ? "2K" : "1K";
+    (effectiveProvider === "sangtao" || effectiveProvider === "jtht") && options.resolution === "2K"
+      ? "2K"
+      : "1K";
   const { width, height } = getDimensionsForRatio(options.aspectRatio, targetRes);
 
   let sharpPipeline = sharp(rawBuffer).resize(width, height, {

@@ -362,9 +362,11 @@ export default function StudioPage() {
 
   // --- API Testing & Persistence States ---
   const [showSangtaoKey, setShowSangtaoKey] = useState(false);
+  const [showJthtKey, setShowJthtKey] = useState(false);
   const [showGeminiKey, setShowGeminiKey] = useState(false);
   const [showOpenAIKey, setShowOpenAIKey] = useState(false);
   const [isTestingSangtao, setIsTestingSangtao] = useState(false);
+  const [isTestingJtht, setIsTestingJtht] = useState(false);
   const [isTestingGemini, setIsTestingGemini] = useState(false);
   const [isTestingOpenAI, setIsTestingOpenAI] = useState(false);
   const [sangtaoTestResult, setSangtaoTestResult] = useState<{
@@ -372,6 +374,7 @@ export default function StudioPage() {
     message: string;
     credits?: number;
   } | null>(null);
+  const [jthtTestResult, setJthtTestResult] = useState<{ success: boolean; message: string } | null>(null);
   const [geminiTestResult, setGeminiTestResult] = useState<{ success: boolean; message: string } | null>(null);
   const [openAITestResult, setOpenAITestResult] = useState<{ success: boolean; message: string } | null>(null);
   const [saveNotice, setSaveNotice] = useState<string>("");
@@ -453,7 +456,12 @@ export default function StudioPage() {
           if (cached) {
             try {
               const parsedCached = JSON.parse(cached);
-              if (parsedCached.sangtaoApiKey || parsedCached.geminiApiKey || parsedCached.openaiApiKey) {
+              if (
+                parsedCached.sangtaoApiKey ||
+                parsedCached.jthtApiKey ||
+                parsedCached.geminiApiKey ||
+                parsedCached.openaiApiKey
+              ) {
                 data = { ...data, ...parsedCached };
                 if (data.defaultProvider === "cloudflare" || data.defaultProvider === "stability") {
                   data.defaultProvider = "sangtao";
@@ -548,11 +556,13 @@ export default function StudioPage() {
         const resetSettings: StudioSettings = data.settings || {
           ...settings,
           sangtaoApiKey: "",
+          jthtApiKey: "",
           geminiApiKey: "",
           openaiApiKey: "",
         };
         setSettings(resetSettings);
         setSangtaoTestResult(null);
+        setJthtTestResult(null);
         setGeminiTestResult(null);
         setOpenAITestResult(null);
         setSaveNotice("Đã xóa sạch toàn bộ API Key khỏi hệ thống!");
@@ -567,10 +577,16 @@ export default function StudioPage() {
     }
   };
 
-  const handleClearSingleApiKey = async (providerName: "sangtao" | "gemini" | "openai") => {
+  const handleClearSingleApiKey = async (providerName: "sangtao" | "jtht" | "gemini" | "openai") => {
     if (!settings) return;
     const providerLabel =
-      providerName === "sangtao" ? "Sangtao.ai" : providerName === "gemini" ? "Google Gemini" : "OpenAI";
+      providerName === "sangtao"
+        ? "Sangtao.ai"
+        : providerName === "jtht"
+          ? "JTHT AI (ai.jtht.vn)"
+          : providerName === "gemini"
+            ? "Google Gemini"
+            : "OpenAI";
 
     if (!window.confirm(`Bạn có chắc chắn muốn xóa làm trống API Key của ${providerLabel}?`)) {
       return;
@@ -579,11 +595,13 @@ export default function StudioPage() {
     const updated: StudioSettings = {
       ...settings,
       sangtaoApiKey: providerName === "sangtao" ? "" : settings.sangtaoApiKey,
+      jthtApiKey: providerName === "jtht" ? "" : settings.jthtApiKey,
       geminiApiKey: providerName === "gemini" ? "" : settings.geminiApiKey,
       openaiApiKey: providerName === "openai" ? "" : settings.openaiApiKey,
     };
 
     if (providerName === "sangtao") setSangtaoTestResult(null);
+    if (providerName === "jtht") setJthtTestResult(null);
     if (providerName === "gemini") setGeminiTestResult(null);
     if (providerName === "openai") setOpenAITestResult(null);
 
@@ -594,9 +612,10 @@ export default function StudioPage() {
     setTimeout(() => setSaveNotice(""), 3500);
   };
 
-  const handleTestApi = async (testProvider: "sangtao" | "gemini" | "openai") => {
+  const handleTestApi = async (testProvider: "sangtao" | "jtht" | "gemini" | "openai") => {
     let keyToTest = "";
     if (testProvider === "sangtao") keyToTest = settings?.sangtaoApiKey || "";
+    else if (testProvider === "jtht") keyToTest = settings?.jthtApiKey || "";
     else if (testProvider === "gemini") keyToTest = settings?.geminiApiKey || "";
     else if (testProvider === "openai") keyToTest = settings?.openaiApiKey || "";
 
@@ -605,6 +624,11 @@ export default function StudioPage() {
         setSangtaoTestResult({
           success: false,
           message: "Vui lòng dán khóa Sangtao.ai API Key (X-Api-Key) trước khi kiểm tra!",
+        });
+      } else if (testProvider === "jtht") {
+        setJthtTestResult({
+          success: false,
+          message: "Vui lòng dán khóa JTHT AI Key (Bearer token sk-...) trước khi kiểm tra!",
         });
       } else if (testProvider === "gemini") {
         setGeminiTestResult({
@@ -624,6 +648,10 @@ export default function StudioPage() {
       setIsTestingSangtao(true);
       setSangtaoTestResult(null);
       appendLog("info", "SangtaoAI", "Xác thực API Sangtao.ai", "Đang kết nối API v2 kiểm tra số dư credit...");
+    } else if (testProvider === "jtht") {
+      setIsTestingJtht(true);
+      setJthtTestResult(null);
+      appendLog("info", "JTHT_AI", "Xác thực API JTHT", "Đang kiểm tra kết nối tới ai.jtht.vn...");
     } else if (testProvider === "gemini") {
       setIsTestingGemini(true);
       setGeminiTestResult(null);
@@ -638,7 +666,11 @@ export default function StudioPage() {
       const res = await fetch("/api/test-api", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ provider: testProvider, apiKey: keyToTest }),
+        body: JSON.stringify({
+          provider: testProvider,
+          apiKey: keyToTest,
+          baseUrl: testProvider === "jtht" ? settings?.jthtBaseUrl : undefined,
+        }),
       });
       const data = await res.json();
       if (res.ok && data.success) {
@@ -664,6 +696,15 @@ export default function StudioPage() {
             setProvider("sangtao");
             await saveSettingsToServer(updated, true);
           }
+        } else if (testProvider === "jtht") {
+          setJthtTestResult({ success: true, message: data.message });
+          appendLog("success", "JTHT_AI", "Kết nối JTHT AI thành công", data.message);
+          if (settings) {
+            const updated = { ...settings, enableMockMode: false, defaultProvider: "jtht" as const };
+            setSettings(updated);
+            setProvider("jtht");
+            await saveSettingsToServer(updated, true);
+          }
         } else if (testProvider === "gemini") {
           setGeminiTestResult({ success: true, message: data.message });
           if (settings) {
@@ -685,6 +726,9 @@ export default function StudioPage() {
         if (testProvider === "sangtao") {
           setSangtaoTestResult({ success: false, message: data.error || "Kết nối Sangtao.ai thất bại" });
           appendLog("error", "SangtaoAI", "Lỗi xác thực Sangtao.ai", data.error || "Kết nối thất bại");
+        } else if (testProvider === "jtht") {
+          setJthtTestResult({ success: false, message: data.error || "Kết nối JTHT AI thất bại" });
+          appendLog("error", "JTHT_AI", "Lỗi xác thực JTHT AI", data.error || "Kết nối thất bại");
         } else if (testProvider === "gemini") {
           setGeminiTestResult({ success: false, message: data.error || "Kết nối thất bại" });
         } else {
@@ -694,6 +738,8 @@ export default function StudioPage() {
     } catch (err: any) {
       if (testProvider === "sangtao") {
         setSangtaoTestResult({ success: false, message: err.message || "Lỗi kiểm tra kết nối" });
+      } else if (testProvider === "jtht") {
+        setJthtTestResult({ success: false, message: err.message || "Lỗi kiểm tra kết nối" });
       } else if (testProvider === "gemini") {
         setGeminiTestResult({ success: false, message: err.message || "Lỗi kiểm tra kết nối" });
       } else {
@@ -701,6 +747,7 @@ export default function StudioPage() {
       }
     } finally {
       if (testProvider === "sangtao") setIsTestingSangtao(false);
+      else if (testProvider === "jtht") setIsTestingJtht(false);
       else if (testProvider === "gemini") setIsTestingGemini(false);
       else setIsTestingOpenAI(false);
     }
@@ -1279,6 +1326,11 @@ export default function StudioPage() {
             <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 shadow-sm">
               <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
               <span>Sangtao.ai: GPT Image Đã Sẵn Sàng</span>
+            </div>
+          ) : activeProvider === "jtht" && settings?.jthtApiKey && !settings?.enableMockMode ? (
+            <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 shadow-sm">
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+              <span>JTHT AI: gpt-image-2 Đã Sẵn Sàng</span>
             </div>
           ) : activeProvider === "gemini" && settings?.geminiApiKey && !settings?.enableMockMode ? (
             <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 shadow-sm">
@@ -1882,9 +1934,11 @@ export default function StudioPage() {
                 <span className="text-xs font-medium text-white">
                   {activeProvider === "sangtao"
                     ? "Sangtao.ai (GPT Image)"
-                    : activeProvider === "gemini"
-                      ? "Google Gemini"
-                      : "OpenAI"}
+                    : activeProvider === "jtht"
+                      ? "JTHT AI (gpt-image-2)"
+                      : activeProvider === "gemini"
+                        ? "Google Gemini"
+                        : "OpenAI"}
                 </span>
               </div>
               <button
@@ -3217,7 +3271,7 @@ export default function StudioPage() {
                   <SettingsIcon className="h-4 w-4" />
                 </div>
                 <h3 className="text-xs font-bold text-white uppercase tracking-wider">
-                  Cấu Hình AI Studio (Sangtao.ai • Gemini • OpenAI)
+                  Cấu Hình AI Studio (Sangtao.ai • JTHT AI • Gemini • OpenAI)
                 </h3>
               </div>
               <button
@@ -3228,8 +3282,8 @@ export default function StudioPage() {
               </button>
             </div>
 
-            {/* 3 Tab Chọn Nhà Cung Cấp */}
-            <div className="grid grid-cols-3 gap-1.5 bg-[#080b14] p-1.5 rounded-xl border border-white/[0.08]">
+            {/* 4 Tab Chọn Nhà Cung Cấp */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 bg-[#080b14] p-1.5 rounded-xl border border-white/[0.08]">
               <button
                 type="button"
                 onClick={() => {
@@ -3243,6 +3297,21 @@ export default function StudioPage() {
               >
                 <span>Sangtao.ai</span>
                 <span className="text-[9px] text-indigo-400 font-normal">GPT Image API</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setSettings({ ...settings, defaultProvider: "jtht" });
+                  setProvider("jtht");
+                }}
+                className={`py-2 px-2 rounded-xl text-xs font-semibold transition-all flex flex-col items-center gap-0.5 ${settings.defaultProvider === "jtht"
+                    ? "border border-indigo-500 bg-indigo-500/10 text-white ring-1 ring-indigo-500/20 shadow-sm"
+                    : "text-slate-400 hover:text-white"
+                  }`}
+              >
+                <span>JTHT AI</span>
+                <span className="text-[9px] text-indigo-400 font-normal">gpt-image-2</span>
               </button>
 
               <button
@@ -3389,6 +3458,148 @@ export default function StudioPage() {
                       <AlertCircle className="h-4 w-4 text-rose-400 flex-shrink-0 mt-0.5" />
                     )}
                     <span className="leading-relaxed">{sangtaoTestResult.message}</span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* TAB 2: JTHT AI (ai.jtht.vn - GPT Image 2) */}
+            {settings.defaultProvider === "jtht" && (
+              <div className="rounded-xl border border-white/[0.08] bg-[#101524]/60 p-4 flex flex-col gap-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-white">
+                      JTHT AI — GPT Image 2 (ai.jtht.vn)
+                    </span>
+                    {settings.jthtApiKey && (
+                      <span className="text-[10px] text-emerald-400 font-medium bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
+                        Đã Lưu Key
+                      </span>
+                    )}
+                  </div>
+                  <a
+                    href="https://ai.jtht.vn"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-[11px] text-indigo-400 hover:text-indigo-300 flex items-center gap-1 hover:underline"
+                  >
+                    <span>Trang ai.jtht.vn</span>
+                    <ExternalLink className="h-3 w-3" />
+                  </a>
+                </div>
+
+                <div className="relative">
+                  <input
+                    type={showJthtKey ? "text" : "password"}
+                    value={settings.jthtApiKey || ""}
+                    onChange={(e) => {
+                      setSettings({ ...settings, jthtApiKey: e.target.value });
+                      setJthtTestResult(null);
+                    }}
+                    placeholder="Dán khóa API Key Bearer (VD: sk-...) vào đây"
+                    className="w-full h-10 rounded-xl bg-[#080b14] border border-white/[0.12] pl-3.5 pr-16 text-xs text-white focus:border-indigo-500 focus:outline-none font-mono"
+                  />
+                  <div className="absolute right-2.5 top-2.5 flex items-center gap-1.5 text-slate-400">
+                    {Boolean(settings.jthtApiKey) && (
+                      <button
+                        type="button"
+                        title="Xóa làm trống key này"
+                        onClick={() => handleClearSingleApiKey("jtht")}
+                        className="p-0.5 hover:text-rose-400 text-slate-400 transition-colors"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setShowJthtKey(!showJthtKey)}
+                      className="p-0.5 hover:text-white transition-colors"
+                    >
+                      {showJthtKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                  <div>
+                    <label className="text-[10px] text-slate-400 block mb-1">Model tạo ảnh:</label>
+                    <input
+                      type="text"
+                      value={settings.jthtModel || "gpt-image-2"}
+                      onChange={(e) => setSettings({ ...settings, jthtModel: e.target.value })}
+                      placeholder="gpt-image-2"
+                      className="w-full h-8 rounded-lg bg-[#080b14] border border-white/[0.12] px-2.5 text-xs text-white font-mono focus:border-indigo-500 focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-slate-400 block mb-1">Base URL:</label>
+                    <input
+                      type="text"
+                      value={settings.jthtBaseUrl || "https://ai.jtht.vn/v1"}
+                      onChange={(e) => setSettings({ ...settings, jthtBaseUrl: e.target.value })}
+                      placeholder="https://ai.jtht.vn/v1"
+                      className="w-full h-8 rounded-lg bg-[#080b14] border border-white/[0.12] px-2.5 text-xs text-white font-mono focus:border-indigo-500 focus:outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pt-1 border-t border-white/[0.06]">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-[11px] text-slate-400 font-medium">Model:</span>
+                    <span className="px-2.5 py-1 rounded-lg bg-indigo-500/10 border border-indigo-500/20 text-indigo-300 text-xs font-mono font-medium">
+                      {settings.jthtModel || "gpt-image-2"}
+                    </span>
+                    <span className="px-2 py-0.5 rounded-lg bg-emerald-500/10 border border-emerald-500/25 text-emerald-300 text-[10px] font-semibold">
+                      Chất lượng hỗ trợ: {(supportedResolutionsByProvider.jtht || ["1K", "2K"]).join(", ")}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    {Boolean(settings.jthtApiKey) && (
+                      <button
+                        type="button"
+                        onClick={() => handleClearSingleApiKey("jtht")}
+                        className="h-9 px-3 rounded-xl border border-rose-500/20 bg-rose-500/10 hover:bg-rose-500/20 text-xs font-semibold text-rose-300 transition-colors flex items-center gap-1.5"
+                      >
+                        <Trash2 className="h-3.5 w-3.5 text-rose-400" />
+                        <span>Xóa Key</span>
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      disabled={isTestingJtht || !settings.jthtApiKey}
+                      onClick={() => handleTestApi("jtht")}
+                      className="h-9 px-3.5 rounded-xl border border-white/[0.1] bg-white/[0.04] hover:bg-white/[0.08] text-xs font-semibold text-slate-200 transition-colors flex items-center justify-center gap-1.5 disabled:opacity-40"
+                    >
+                      {isTestingJtht ? (
+                        <>
+                          <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                          <span>Đang Kiểm Tra...</span>
+                        </>
+                      ) : (
+                        <>
+                          <ShieldCheck className="h-3.5 w-3.5 text-indigo-400" />
+                          <span>Kiểm Tra Kết Nối</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                {jthtTestResult && (
+                  <div
+                    className={`p-3 rounded-xl text-xs flex items-start gap-2 border ${
+                      jthtTestResult.success
+                        ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-300"
+                        : "bg-rose-500/10 border-rose-500/20 text-rose-300"
+                    }`}
+                  >
+                    {jthtTestResult.success ? (
+                      <CheckCircle className="h-4 w-4 text-emerald-400 flex-shrink-0 mt-0.5" />
+                    ) : (
+                      <AlertCircle className="h-4 w-4 text-rose-400 flex-shrink-0 mt-0.5" />
+                    )}
+                    <span className="leading-relaxed">{jthtTestResult.message}</span>
                   </div>
                 )}
               </div>
