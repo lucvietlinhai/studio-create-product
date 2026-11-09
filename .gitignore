@@ -1,0 +1,44 @@
+# Dependencies & Runtime
+/node_modules
+/.pnp
+.pnp.js
+/runtime
+
+# Next.js Build Output
+/.next/
+/out/
+/build
+
+# Packaged Distributions & Archives
+/dist-local/
+/dist-installer/
+/dist-macos/
+*.zip
+*.tar.gz
+*.exe
+/scripts/mac-resources/
+
+# User Generated Images & Sessions
+/output_collections/
+
+# Private API Keys & Local Settings (NEVER COMMIT)
+.env
+.env.*
+.env.local
+studio-settings.json
+
+# AI Agent Internal Skills & Kit
+/.agent/
+/.agents/
+/ai_product_image_agent_kit/
+AGENTS.md
+GEMINI.md
+
+# TypeScript & Logs
+*.tsbuildinfo
+next-env.d.ts
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.DS_Store
+Thumbs.db
