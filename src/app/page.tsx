@@ -61,6 +61,7 @@ import {
   GeneratedImageRecord,
   ProcessLogEntry,
   SANGTAO_IMAGE_MODEL,
+  DEFAULT_PROVIDER_RESOLUTIONS,
 } from "@/types/studio";
 import { BUILT_IN_PRESETS } from "@/lib/config/presets";
 import { COLOR_TONE_CATALOG } from "@/lib/agents/director-agent";
@@ -73,7 +74,6 @@ const IMAGE_RESOLUTIONS: {
 }[] = [
   { id: "1K", label: "1K HD", subLabel: "1024px • Chuẩn TMĐT", badge: "Nhanh" },
   { id: "2K", label: "2K QHD", subLabel: "2048px • Sắc nét cao", badge: "Khuyên dùng" },
-  { id: "4K", label: "4K Ultra HD", subLabel: "4096px • Siêu nét In ấn", badge: "UHD" },
 ];
 
 type RegionStroke =
@@ -330,6 +330,9 @@ export default function StudioPage() {
   const [aspectRatio, setAspectRatio] = useState<AspectRatio>("1:1");
   const [resolution, setResolution] = useState<ImageResolution>("1K");
   const [provider, setProvider] = useState<AIProvider>("sangtao");
+  const [supportedResolutionsByProvider, setSupportedResolutionsByProvider] = useState<
+    Record<AIProvider, ImageResolution[]>
+  >(DEFAULT_PROVIDER_RESOLUTIONS);
 
   // Collapsible Accordion Sections in Left Sidebar
   const [openSections, setOpenSections] = useState({
@@ -466,6 +469,12 @@ export default function StudioPage() {
         }
         if (!data.defaultProvider || data.defaultProvider === "cloudflare" || data.defaultProvider === "stability") {
           data.defaultProvider = "sangtao";
+        }
+        if (data.supportedResolutionsByProvider) {
+          setSupportedResolutionsByProvider((prev) => ({
+            ...prev,
+            ...data.supportedResolutionsByProvider,
+          }));
         }
         setSettings(data);
         if (data.defaultProvider) setProvider(data.defaultProvider);
@@ -633,6 +642,15 @@ export default function StudioPage() {
       });
       const data = await res.json();
       if (res.ok && data.success) {
+        if (Array.isArray(data.supportedResolutions) && data.supportedResolutions.length > 0) {
+          setSupportedResolutionsByProvider((prev) => ({
+            ...prev,
+            [testProvider]: data.supportedResolutions,
+          }));
+          if (!data.supportedResolutions.includes(resolution)) {
+            setResolution(data.supportedResolutions[0] || "1K");
+          }
+        }
         if (testProvider === "sangtao") {
           setSangtaoTestResult({
             success: true,
@@ -1220,6 +1238,19 @@ export default function StudioPage() {
   };
 
   const activeProvider = settings?.defaultProvider || provider || "sangtao";
+  const activeSupportedResolutions: ImageResolution[] =
+    supportedResolutionsByProvider[activeProvider] ||
+    DEFAULT_PROVIDER_RESOLUTIONS[activeProvider] ||
+    ["1K"];
+  const availableResolutionOptions = IMAGE_RESOLUTIONS.filter((r) =>
+    activeSupportedResolutions.includes(r.id)
+  );
+
+  useEffect(() => {
+    if (!activeSupportedResolutions.includes(resolution)) {
+      setResolution(activeSupportedResolutions[0] || "1K");
+    }
+  }, [activeProvider, activeSupportedResolutions, resolution]);
 
   return (
     <div className="min-h-screen bg-[#090d16] text-slate-100 flex flex-col font-sans selection:bg-indigo-500 selection:text-white">
@@ -1786,18 +1817,22 @@ export default function StudioPage() {
                     </div>
                   </div>
 
-                  {/* Chọn Chất Lượng & Độ Phân Giải Hình Ảnh (1K, 2K, 4K) */}
+                  {/* Chọn Chất Lượng & Độ Phân Giải Hình Ảnh Theo Model Đang Áp Dụng */}
                   <div>
                     <div className="flex items-center justify-between mb-1">
                       <label className="text-[11px] font-medium text-slate-300">
-                        Chất Lượng Hình Ảnh Tạo & Xuất (Resolution)
+                        Chất Lượng Ảnh (Theo Model Đang Dùng)
                       </label>
                       <span className="text-[10px] font-mono text-emerald-400 font-semibold">
-                        Chuẩn {resolution}
+                        Hỗ trợ: {activeSupportedResolutions.join(", ")}
                       </span>
                     </div>
-                    <div className="grid grid-cols-3 gap-1.5">
-                      {IMAGE_RESOLUTIONS.map((resOpt) => {
+                    <div
+                      className={`grid gap-1.5 ${
+                        availableResolutionOptions.length > 1 ? "grid-cols-2" : "grid-cols-1"
+                      }`}
+                    >
+                      {availableResolutionOptions.map((resOpt) => {
                         const isSelected = resolution === resOpt.id;
                         return (
                           <button
@@ -1819,7 +1854,9 @@ export default function StudioPage() {
                                     : "bg-white/[0.06] text-slate-400"
                                 }`}
                               >
-                                {resOpt.badge}
+                                {availableResolutionOptions.length === 1
+                                  ? "Mặc định của Model"
+                                  : resOpt.badge}
                               </span>
                             </div>
                             <span className="text-[9px] text-slate-400 truncate w-full">
@@ -3297,10 +3334,13 @@ export default function StudioPage() {
                 </div>
 
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pt-1 border-t border-white/[0.06]">
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <span className="text-[11px] text-slate-400 font-medium">Model mặc định:</span>
                     <span className="px-2.5 py-1 rounded-lg bg-indigo-500/10 border border-indigo-500/20 text-indigo-300 text-xs font-mono font-medium">
                       GPT Image (chatgpt-image-sangtao)
+                    </span>
+                    <span className="px-2 py-0.5 rounded-lg bg-emerald-500/10 border border-emerald-500/25 text-emerald-300 text-[10px] font-semibold">
+                      Chất lượng hỗ trợ: {(supportedResolutionsByProvider.sangtao || ["1K", "2K"]).join(", ")}
                     </span>
                   </div>
 
@@ -3412,9 +3452,14 @@ export default function StudioPage() {
                 </div>
 
                 <div className="flex items-center justify-between pt-1 border-t border-white/[0.06]">
-                  <span className="text-[11px] text-slate-400">
-                    Model: <strong className="text-white">{settings.geminiModel}</strong>
-                  </span>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-[11px] text-slate-400">
+                      Model: <strong className="text-white">{settings.geminiModel}</strong>
+                    </span>
+                    <span className="px-2 py-0.5 rounded-lg bg-emerald-500/10 border border-emerald-500/25 text-emerald-300 text-[10px] font-semibold">
+                      Chất lượng hỗ trợ: {(supportedResolutionsByProvider.gemini || ["1K"]).join(", ")}
+                    </span>
+                  </div>
                   <div className="flex items-center gap-2">
                     {Boolean(settings.geminiApiKey) && (
                       <button
@@ -3521,9 +3566,14 @@ export default function StudioPage() {
                 </div>
 
                 <div className="flex items-center justify-between pt-1 border-t border-white/[0.06]">
-                  <span className="text-[11px] text-slate-400">
-                    Model: <strong className="text-white">{settings.openaiModel}</strong>
-                  </span>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-[11px] text-slate-400">
+                      Model: <strong className="text-white">{settings.openaiModel}</strong>
+                    </span>
+                    <span className="px-2 py-0.5 rounded-lg bg-emerald-500/10 border border-emerald-500/25 text-emerald-300 text-[10px] font-semibold">
+                      Chất lượng hỗ trợ: {(supportedResolutionsByProvider.openai || ["1K"]).join(", ")}
+                    </span>
+                  </div>
                   <div className="flex items-center gap-2">
                     {Boolean(settings.openaiApiKey) && (
                       <button

@@ -1,6 +1,6 @@
 export type AspectRatio = "1:1" | "4:3" | "16:9" | "9:16" | "3:4" | "4:5";
 
-export type ImageResolution = "1K" | "2K" | "4K";
+export type ImageResolution = "1K" | "2K";
 
 export type ConceptMode = "preset" | "background_ref" | "prompt" | "sample_match";
 
@@ -8,6 +8,18 @@ export type AIProvider = "sangtao" | "gemini" | "openai";
 
 /** Sangtao.ai chỉ cung cấp duy nhất model GPT Image cho tạo ảnh */
 export const SANGTAO_IMAGE_MODEL = "chatgpt-image-sangtao";
+
+/**
+ * Danh sách chất lượng hình ảnh hỗ trợ theo từng nhà cung cấp / model:
+ * - Sangtao.ai (chatgpt-image-sangtao): Hỗ trợ "1K" và "2K" (không hỗ trợ 4K)
+ * - Google Gemini (gemini-2.5-flash-image): Hỗ trợ "1K" mặc định
+ * - OpenAI (gpt-image-1 / dall-e-3): Hỗ trợ "1K" mặc định
+ */
+export const DEFAULT_PROVIDER_RESOLUTIONS: Record<AIProvider, ImageResolution[]> = {
+  sangtao: ["1K", "2K"],
+  gemini: ["1K"],
+  openai: ["1K"],
+};
 
 export type ShotStyle = "style1_hero" | "style2_grid2x2" | "style3_callout";
 

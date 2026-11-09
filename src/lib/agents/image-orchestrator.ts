@@ -519,7 +519,7 @@ ${options.prompt}`;
     }
   }
 
-  const targetResolution: ImageResolution = options.resolution || "1K";
+  const targetResolution: ImageResolution = options.resolution === "2K" ? "2K" : "1K";
 
   const requestBody: Record<string, any> = {
     model: modelName,
@@ -1048,16 +1048,18 @@ async function generateWithOpenAIPipeline(
 }
 
 /**
- * Ensures exact output resolution (1K, 2K, or 4K) for the chosen AspectRatio and applies:
- * - Lanczos3 high-precision resampling & adaptive micro-contrast sharpening for 2K / 4K
- * - Sleek Commercial Infographic Callout Lines & Typography (on Style 3 Callout) rendered natively at 1K/2K/4K
+ * Ensures exact output resolution (1K or 2K, depending on model support) for the chosen AspectRatio and applies:
+ * - Lanczos3 high-precision resampling & adaptive micro-contrast sharpening for 2K
+ * - Sleek Commercial Infographic Callout Lines & Typography (on Style 3 Callout) rendered natively at 1K/2K
  */
 async function finalizeCommercialPostProcessing(
   rawBuffer: Buffer,
   options: GenerateImageOptions,
   emitLog?: LogEmitter
 ): Promise<{ buffer: Buffer; cleanBuffer: Buffer }> {
-  const targetRes: ImageResolution = options.resolution || "1K";
+  const effectiveProvider = options.provider || "sangtao";
+  const targetRes: ImageResolution =
+    effectiveProvider === "sangtao" && options.resolution === "2K" ? "2K" : "1K";
   const { width, height } = getDimensionsForRatio(options.aspectRatio, targetRes);
 
   let sharpPipeline = sharp(rawBuffer).resize(width, height, {
@@ -1066,15 +1068,15 @@ async function finalizeCommercialPostProcessing(
     kernel: sharp.kernel.lanczos3,
   });
 
-  if (targetRes === "2K" || targetRes === "4K") {
+  if (targetRes === "2K") {
     emitLog?.(
       "info",
       "Compositor",
-      `Nâng cấp độ phân giải chuẩn ${targetRes} (${width}x${height}px)`,
-      `Đang xử lý nội suy Lanczos3 & tăng cường chi tiết bề mặt ở chuẩn ${targetRes}...`
+      `Xuất ảnh chất lượng ${targetRes} (${width}x${height}px)`,
+      `Đang đồng bộ khung hình chuẩn ${targetRes} (${width}x${height}px) & làm nét chi tiết bề mặt...`
     );
     sharpPipeline = sharpPipeline.sharpen({
-      sigma: targetRes === "4K" ? 1.15 : 0.85,
+      sigma: 0.85,
       m1: 0.8,
       m2: 1.5,
     });

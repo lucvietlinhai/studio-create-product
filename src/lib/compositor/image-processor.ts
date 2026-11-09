@@ -5,7 +5,7 @@ export function getDimensionsForRatio(
   ratio: AspectRatio,
   resolution: ImageResolution = "1K"
 ): { width: number; height: number } {
-  const mult = resolution === "4K" ? 4 : resolution === "2K" ? 2 : 1;
+  const mult = resolution === "2K" ? 2 : 1;
 
   switch (ratio) {
     case "1:1":

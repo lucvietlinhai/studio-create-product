@@ -28,11 +28,33 @@ export async function POST(req: NextRequest) {
           const free = balanceData.data?.freeCredit ?? 0;
           const purchased = balanceData.data?.purchasedCredit ?? 0;
 
+          // Kiểm tra chất lượng tạo ảnh mà model bên Sangtao.ai hỗ trợ trực tiếp từ endpoint /api/v2/models?category=image
+          let supportedResolutions: ("1K" | "2K")[] = ["1K", "2K"];
+          try {
+            const modelsRes = await fetch("https://sangtao.ai/api/v2/models?category=image", {
+              headers: { "X-Api-Key": trimmedKey },
+            });
+            const modelsJson = await modelsRes.json().catch(() => ({}));
+            const gptImgModel = (modelsJson.data || []).find(
+              (m: any) => m.slug === "chatgpt-image-sangtao"
+            );
+            const resOptions: any[] = gptImgModel?.config?.imageResolution?.options || [];
+            if (resOptions.length > 0) {
+              const parsed = resOptions
+                .map((opt) => String(opt.value || opt.label || "").toUpperCase())
+                .filter((val): val is "1K" | "2K" => val === "1K" || val === "2K");
+              if (parsed.length > 0) {
+                supportedResolutions = Array.from(new Set(parsed));
+              }
+            }
+          } catch { }
+
           return NextResponse.json({
             success: true,
             provider: "sangtao",
             credits: avail,
-            message: `Kết nối Sangtao.ai thành công! Số dư khả dụng: ${avail} credit (Miễn phí: ${free} • Đã mua: ${purchased}).`,
+            supportedResolutions,
+            message: `Kết nối Sangtao.ai thành công! Số dư khả dụng: ${avail} credit (Miễn phí: ${free} • Đã mua: ${purchased}) • Chất lượng ảnh hỗ trợ: ${supportedResolutions.join(", ")}.`,
           });
         } else {
           const errMsg =
@@ -73,14 +95,17 @@ export async function POST(req: NextRequest) {
           return NextResponse.json({
             success: true,
             provider: "gemini",
-            message: "Kết nối thành công! Khóa Google Gemini API hợp lệ và sẵn sàng hoạt động.",
+            supportedResolutions: ["1K"],
+            message:
+              "Kết nối thành công! Khóa Google Gemini API hợp lệ • Model hỗ trợ chất lượng ảnh mặc định: 1K (1024px).",
           });
         }
 
         return NextResponse.json({
           success: true,
           provider: "gemini",
-          message: "Kết nối thành công tới dịch vụ Google Gemini!",
+          supportedResolutions: ["1K"],
+          message: "Kết nối thành công tới dịch vụ Google Gemini! Chất lượng ảnh hỗ trợ: 1K.",
         });
       } catch (err: any) {
         console.error("Gemini API Test Error:", err);
@@ -107,14 +132,17 @@ export async function POST(req: NextRequest) {
           return NextResponse.json({
             success: true,
             provider: "openai",
-            message: "Kết nối thành công! Khóa OpenAI API hợp lệ và sẵn sàng hoạt động.",
+            supportedResolutions: ["1K"],
+            message:
+              "Kết nối thành công! Khóa OpenAI API hợp lệ • Model hỗ trợ chất lượng ảnh mặc định: 1K (1024px).",
           });
         }
 
         return NextResponse.json({
           success: true,
           provider: "openai",
-          message: "Kết nối thành công tới dịch vụ OpenAI!",
+          supportedResolutions: ["1K"],
+          message: "Kết nối thành công tới dịch vụ OpenAI! Chất lượng ảnh hỗ trợ: 1K.",
         });
       } catch (err: any) {
         console.error("OpenAI API Test Error:", err);
