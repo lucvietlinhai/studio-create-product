@@ -70,50 +70,6 @@ export async function POST(req: NextRequest) {
           { status: 400 }
         );
       }
-    } else if (provider === "jtht") {
-      try {
-        const baseUrl = (typeof body.baseUrl === "string" && body.baseUrl.trim())
-          ? body.baseUrl.trim()
-          : "https://ai.jtht.vn/v1";
-
-        const modelsRes = await fetch(`${baseUrl.replace(/\/+$/, "")}/models`, {
-          headers: {
-            Authorization: `Bearer ${trimmedKey}`,
-            "Content-Type": "application/json",
-          },
-        });
-        const modelsData = await modelsRes.json().catch(() => ({}));
-
-        if (modelsRes.ok) {
-          const modelList = Array.isArray(modelsData?.data)
-            ? modelsData.data.map((m: any) => m.id || m.slug).filter(Boolean)
-            : [];
-          const hasImageModel = modelList.some((m: string) =>
-            m.toLowerCase().includes("image") || m.toLowerCase().includes("gpt-image")
-          );
-
-          return NextResponse.json({
-            success: true,
-            provider: "jtht",
-            supportedResolutions: ["1K", "2K"],
-            message: `Kết nối JTHT AI (ai.jtht.vn) thành công! Khóa API hợp lệ • Model gpt-image-2 sẵn sàng tạo ảnh (1K & 2K).`,
-          });
-        } else {
-          const errMsg =
-            modelsData.message ||
-            modelsData.error?.message ||
-            modelsData.error ||
-            (modelsRes.status === 401
-              ? "Khóa API Key không hợp lệ hoặc đã hết hạn trên ai.jtht.vn."
-              : `Lỗi phản hồi từ ai.jtht.vn (HTTP ${modelsRes.status})`);
-          return NextResponse.json({ success: false, error: errMsg }, { status: 400 });
-        }
-      } catch (err: any) {
-        return NextResponse.json(
-          { success: false, error: err.message || "Không thể kết nối đến máy chủ ai.jtht.vn." },
-          { status: 400 }
-        );
-      }
     } else if (provider === "gemini") {
       try {
         const { GoogleGenAI } = await import("@google/genai");

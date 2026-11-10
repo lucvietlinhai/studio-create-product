@@ -1,11 +1,6 @@
 import fs from "fs";
 import path from "path";
-import {
-  AIProvider,
-  StudioSettings,
-  JTHT_DEFAULT_MODEL,
-  JTHT_DEFAULT_BASE_URL,
-} from "@/types/studio";
+import { AIProvider, StudioSettings } from "@/types/studio";
 
 const SETTINGS_FILE = path.join(process.cwd(), "studio-settings.json");
 const ENV_LOCAL_FILE = path.join(process.cwd(), ".env.local");
@@ -32,7 +27,7 @@ function getEnvLocations(): string[] {
   return Array.from(new Set(locs));
 }
 
-const VALID_PROVIDERS: AIProvider[] = ["sangtao", "jtht", "gemini", "openai"];
+const VALID_PROVIDERS: AIProvider[] = ["sangtao", "gemini", "openai"];
 
 function normalizeProvider(value: unknown): AIProvider {
   return VALID_PROVIDERS.includes(value as AIProvider) ? (value as AIProvider) : "sangtao";
@@ -42,9 +37,6 @@ export function getDefaultSettings(): StudioSettings {
   return {
     defaultProvider: normalizeProvider(process.env.DEFAULT_AI_PROVIDER),
     sangtaoApiKey: process.env.SANGTAO_API_KEY || "",
-    jthtApiKey: process.env.JTHT_API_KEY || "",
-    jthtModel: process.env.JTHT_MODEL || JTHT_DEFAULT_MODEL,
-    jthtBaseUrl: process.env.JTHT_BASE_URL || JTHT_DEFAULT_BASE_URL,
     geminiApiKey: process.env.GEMINI_API_KEY || "",
     geminiModel: process.env.GEMINI_MODEL || "gemini-2.5-flash-image",
     openaiApiKey: process.env.OPENAI_API_KEY || "",
@@ -54,14 +46,11 @@ export function getDefaultSettings(): StudioSettings {
   };
 }
 
-/** Only keep fields that belong to StudioSettings (drops legacy Cloudflare / Stability keys). */
+/** Only keep fields that belong to StudioSettings (drops legacy Cloudflare / Stability / JTHT keys). */
 function sanitize(input: Record<string, any>, defaults: StudioSettings): StudioSettings {
   return {
     defaultProvider: normalizeProvider(input.defaultProvider),
     sangtaoApiKey: typeof input.sangtaoApiKey === "string" ? input.sangtaoApiKey.trim() : (defaults.sangtaoApiKey || ""),
-    jthtApiKey: typeof input.jthtApiKey === "string" ? input.jthtApiKey.trim() : (defaults.jthtApiKey || ""),
-    jthtModel: input.jthtModel || defaults.jthtModel,
-    jthtBaseUrl: input.jthtBaseUrl || defaults.jthtBaseUrl,
     geminiApiKey: typeof input.geminiApiKey === "string" ? input.geminiApiKey.trim() : (defaults.geminiApiKey || ""),
     geminiModel: input.geminiModel || defaults.geminiModel,
     openaiApiKey: typeof input.openaiApiKey === "string" ? input.openaiApiKey.trim() : (defaults.openaiApiKey || ""),
@@ -124,6 +113,12 @@ export function saveSettings(newSettings: Partial<StudioSettings>): StudioSettin
       delete envMap["CF_API_TOKEN"];
       delete envMap["SANGTAO_MODEL"];
       delete envMap["STABILITY_API_KEY"];
+      delete envMap["JTHT_API_KEY"];
+      delete envMap["JTHT_MODEL"];
+      delete envMap["JTHT_BASE_URL"];
+      delete process.env.JTHT_API_KEY;
+      delete process.env.JTHT_MODEL;
+      delete process.env.JTHT_BASE_URL;
 
       // Update or clear each API Key explicitly
       if (merged.sangtaoApiKey !== undefined) {
@@ -134,23 +129,6 @@ export function saveSettings(newSettings: Partial<StudioSettings>): StudioSettin
           delete envMap["SANGTAO_API_KEY"];
           delete process.env.SANGTAO_API_KEY;
         }
-      }
-      if (merged.jthtApiKey !== undefined) {
-        if (merged.jthtApiKey) {
-          envMap["JTHT_API_KEY"] = merged.jthtApiKey;
-          process.env.JTHT_API_KEY = merged.jthtApiKey;
-        } else {
-          delete envMap["JTHT_API_KEY"];
-          delete process.env.JTHT_API_KEY;
-        }
-      }
-      if (merged.jthtModel) {
-        envMap["JTHT_MODEL"] = merged.jthtModel;
-        process.env.JTHT_MODEL = merged.jthtModel;
-      }
-      if (merged.jthtBaseUrl) {
-        envMap["JTHT_BASE_URL"] = merged.jthtBaseUrl;
-        process.env.JTHT_BASE_URL = merged.jthtBaseUrl;
       }
       if (merged.geminiApiKey !== undefined) {
         if (merged.geminiApiKey) {
@@ -190,7 +168,6 @@ export function saveSettings(newSettings: Partial<StudioSettings>): StudioSettin
 export function clearAllApiKeys(): StudioSettings {
   return saveSettings({
     sangtaoApiKey: "",
-    jthtApiKey: "",
     geminiApiKey: "",
     openaiApiKey: "",
   });
